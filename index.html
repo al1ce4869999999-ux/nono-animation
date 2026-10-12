@@ -14,38 +14,30 @@ body {
   font-family: -apple-system, sans-serif;
 }
 main {
-  max-width: 560px;
+  max-width: 600px;
   margin: auto;
-  padding: 28px 18px;
+  padding: 24px 14px;
   text-align: center;
 }
-h1 { font-size: 25px; }
+h1 { font-size: 24px; }
 p { color: #8b7970; }
-.stage {
+canvas {
+  display: block;
+  width: 100%;
   background: white;
-  border: 2px dashed #ddc7b9;
-  border-radius: 22px;
-  min-height: 300px;
-  display: grid;
-  place-items: center;
-  overflow: hidden;
-  margin: 24px 0;
+  border-radius: 18px;
+  touch-action: none;
+  margin: 20px 0;
 }
-.stage img {
-  display: none;
-  max-width: 100%;
-  max-height: 450px;
-  object-fit: contain;
-}
-button, .upload {
+button, label {
   display: inline-block;
-  border: 0;
-  border-radius: 30px;
+  margin: 5px;
+  padding: 12px 18px;
   background: #b78f80;
   color: white;
-  padding: 15px 24px;
-  font-size: 16px;
-  cursor: pointer;
+  border: 0;
+  border-radius: 24px;
+  font-size: 15px;
 }
 input { display: none; }
 </style>
@@ -53,36 +45,171 @@ input { display: none; }
 <body>
 <main>
   <h1>🐾 のののアニメ工房</h1>
-  <p>お気に入りの子に、ちいさな動きを。</p>
+  <p id="message">画像を選んでね</p>
 
-  <div class="stage">
-    <p id="hint">ここにイラストが表示されるよ</p>
-    <img id="character" alt="キャラクター">
-  </div>
+  <canvas id="canvas" width="500" height="500"></canvas>
 
-  <label class="upload">
-    📷 イラストを選ぶ
+  <label>
+    📷 画像を選ぶ
     <input type="file" id="file" accept="image/*">
   </label>
+  <button id="select">しっぽを囲む</button>
+  <button id="play">▶ ふりふり</button>
+  <button id="stop">■ 停止</button>
 </main>
 
 <script>
-const file = document.getElementById("file");
-const image = document.getElementById("character");
-const hint = document.getElementById("hint");
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d");
+const message = document.getElementById("message");
+const image = new Image();
 
-file.addEventListener("change", () => {
-  const selected = file.files[0];
-  if (!selected) return;
+let loaded = false;
+let selecting = false;
+let drawing = false;
+let points = [];
+let tail = null;
+let playing = false;
+let startTime = 0;
 
-  const reader = new FileReader();
-  reader.onload = () => {
-    image.src = reader.result;
-    image.style.display = "block";
-    hint.style.display = "none";
+document.getElementById("file").onchange = e => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const url = URL.createObjectURL(file);
+  image.onload = () => {
+    canvas.width = image.naturalWidth;
+    canvas.height = image.naturalHeight;
+    loaded = true;
+    tail = null;
+    playing = false;
+    selecting = false;
+    draw();
+    message.textContent = "「しっぽを囲む」を押してね";
+    URL.revokeObjectURL(url);
   };
-  reader.readAsDataURL(selected);
-});
+  image.src = url;
+};
+
+function position(e) {
+  const rect = canvas.getBoundingClientRect();
+  return {
+    x: (e.clientX - rect.left) * canvas.width / rect.width,
+    y: (e.clientY - rect.top) * canvas.height / rect.height
+  };
+}
+
+document.getElementById("select").onclick = () => {
+  if (!loaded) return;
+  playing = false;
+  selecting = true;
+  points = [];
+  message.textContent = "しっぽの輪郭を指でなぞってね";
+};
+
+canvas.onpointerdown = e => {
+  if (!selecting) return;
+  drawing = true;
+  points = [position(e)];
+  canvas.setPointerCapture(e.pointerId);
+};
+
+canvas.onpointermove = e => {
+  if (!drawing) return;
+  points.push(position(e));
+  draw();
+};
+
+canvas.onpointerup = () => {
+  if (!drawing) return;
+  drawing = false;
+  selecting = false;
+
+  if (points.length < 3) return;
+
+  const xs = points.map(p => p.x);
+  const ys = points.map(p => p.y);
+  const x = Math.max(0, Math.floor(Math.min(...xs)));
+  const y = Math.max(0, Math.floor(Math.min(...ys)));
+  const right = Math.min(canvas.width, Math.ceil(Math.max(...xs)));
+  const bottom = Math.min(canvas.height, Math.ceil(Math.max(...ys)));
+  const w = right - x;
+  const h = bottom - y;
+  if (w < 2 || h < 2) return;
+
+  const layer = document.createElement("canvas");
+  layer.width = w;
+  layer.height = h;
+  const lc = layer.getContext("2d");
+
+  lc.beginPath();
+  points.forEach((p, i) => {
+    if (i === 0) lc.moveTo(p.x - x, p.y - y);
+    else lc.lineTo(p.x - x, p.y - y);
+  });
+  lc.closePath();
+  lc.clip();
+  lc.drawImage(image, -x, -y);
+
+  tail = {layer, x, y, w, h};
+  points = [];
+  message.textContent = "「ふりふり」を押してね！";
+  draw();
+};
+
+function draw(time = 0) {
+  if (!loaded) return;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.drawImage(image, 0, 0);
+
+  if (tail) {
+    const angle = playing
+      ? Math.sin((time - startTime) / 240) * 0.25
+      : 0;
+
+    // しっぽの下端中央を回転の支点にする
+    const pivotX = tail.x + tail.w / 2;
+    const pivotY = tail.y + tail.h;
+
+    ctx.save();
+    ctx.translate(pivotX, pivotY);
+    ctx.rotate(angle);
+    ctx.drawImage(
+      tail.layer,
+      tail.x - pivotX,
+      tail.y - pivotY
+    );
+    ctx.restore();
+  }
+
+  if (drawing && points.length) {
+    ctx.strokeStyle = "#ff7890";
+    ctx.lineWidth = Math.max(3, canvas.width / 200);
+    ctx.beginPath();
+    points.forEach((p, i) => {
+      if (i === 0) ctx.moveTo(p.x, p.y);
+      else ctx.lineTo(p.x, p.y);
+    });
+    ctx.stroke();
+  }
+}
+
+function animate(time) {
+  if (!playing) return;
+  draw(time);
+  requestAnimationFrame(animate);
+}
+
+document.getElementById("play").onclick = () => {
+  if (!tail || playing) return;
+  playing = true;
+  startTime = performance.now();
+  requestAnimationFrame(animate);
+};
+
+document.getElementById("stop").onclick = () => {
+  playing = false;
+  draw();
+};
 </script>
 </body>
 </html>
