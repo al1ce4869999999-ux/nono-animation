@@ -45,7 +45,7 @@ input { display: none; }
 <body>
 <main>
   <h1>🐾 のののアニメ工房</h1>
-  <p id="message">画像を選んでね</p>
+  <p id="message" role="status" aria-live="polite">画像を選んでね</p>
 
   <canvas id="canvas" width="500" height="500"></canvas>
 
@@ -67,120 +67,210 @@ const image = new Image();
 let loaded = false;
 let selecting = false;
 let drawing = false;
+let choosingPivot = false;
 let points = [];
 let tail = null;
+let pivot = null;
 let playing = false;
-let startTime = 0;
+let startTime = null;
+let frameId = null;
+let activePointer = null;
+
+function report(text, error = false) {
+  message.textContent = text;
+  message.style.color = error ? "#b42318" : "";
+}
+
+function stopAnimation() {
+  playing = false;
+  if (frameId !== null) cancelAnimationFrame(frameId);
+  frameId = null;
+  startTime = null;
+}
+
+function resetSelection() {
+  selecting = false;
+  drawing = false;
+  choosingPivot = false;
+  activePointer = null;
+  points = [];
+  tail = null;
+  pivot = null;
+}
 
 document.getElementById("file").onchange = e => {
   const file = e.target.files[0];
   if (!file) return;
+  stopAnimation();
+  resetSelection();
+  loaded = false;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  report("画像を読み込んでいます…");
   const url = URL.createObjectURL(file);
   image.onload = () => {
     canvas.width = image.naturalWidth;
     canvas.height = image.naturalHeight;
     loaded = true;
-    tail = null;
-    playing = false;
-    selecting = false;
     draw();
-    message.textContent = "「しっぽを囲む」を押してね";
+    report("「しっぽを囲む」を押してね");
     URL.revokeObjectURL(url);
+  };
+  image.onerror = () => {
+    URL.revokeObjectURL(url);
+    report("画像を読み込めませんでした。PNG または JPEG の画像を選び直してください。", true);
   };
   image.src = url;
 };
 
 function position(e) {
+  // TouchEvent itself has no clientX/clientY; use its active/finished touch.
+  const contact = e.touches?.[0] || e.changedTouches?.[0] || e;
   const rect = canvas.getBoundingClientRect();
+  if (!rect.width || !rect.height ||
+      !Number.isFinite(contact.clientX) || !Number.isFinite(contact.clientY)) {
+    throw new Error("タッチ位置を取得できませんでした。もう一度しっぽを囲んでください。");
+  }
   return {
-    x: (e.clientX - rect.left) * canvas.width / rect.width,
-    y: (e.clientY - rect.top) * canvas.height / rect.height
+    x: Math.max(0, Math.min(canvas.width, (contact.clientX - rect.left) * canvas.width / rect.width)),
+    y: Math.max(0, Math.min(canvas.height, (contact.clientY - rect.top) * canvas.height / rect.height))
   };
 }
 
 document.getElementById("select").onclick = () => {
-  if (!loaded) return;
-  playing = false;
+  if (!loaded) return report("先に画像を読み込んでください。", true);
+  stopAnimation();
+  resetSelection();
   selecting = true;
-  points = [];
-  message.textContent = "しっぽの輪郭を指でなぞってね";
-};
-
-canvas.onpointerdown = e => {
-  if (!selecting) return;
-  drawing = true;
-  points = [position(e)];
-  canvas.setPointerCapture(e.pointerId);
-};
-
-canvas.onpointermove = e => {
-  if (!drawing) return;
-  points.push(position(e));
   draw();
+  report("しっぽの輪郭を指でなぞり、指を離してね");
 };
 
-canvas.onpointerup = () => {
-  if (!drawing) return;
+function inputError(error) {
   drawing = false;
-  selecting = false;
-
-  if (points.length < 3) return;
-
-  const xs = points.map(p => p.x);
-  const ys = points.map(p => p.y);
-  const x = Math.max(0, Math.floor(Math.min(...xs)));
-  const y = Math.max(0, Math.floor(Math.min(...ys)));
-  const right = Math.min(canvas.width, Math.ceil(Math.max(...xs)));
-  const bottom = Math.min(canvas.height, Math.ceil(Math.max(...ys)));
-  const w = right - x;
-  const h = bottom - y;
-  if (w < 2 || h < 2) return;
-
-  const layer = document.createElement("canvas");
-  layer.width = w;
-  layer.height = h;
-  const lc = layer.getContext("2d");
-
-  lc.beginPath();
-  points.forEach((p, i) => {
-    if (i === 0) lc.moveTo(p.x - x, p.y - y);
-    else lc.lineTo(p.x - x, p.y - y);
-  });
-  lc.closePath();
-  lc.clip();
-  lc.drawImage(image, -x, -y);
-
-  tail = {layer, x, y, w, h};
+  activePointer = null;
   points = [];
-  message.textContent = "「ふりふり」を押してね！";
   draw();
-};
+  report(error.message, true);
+}
+
+function begin(e) {
+  if ((!selecting && !choosingPivot) || activePointer !== null) return;
+  if (e.isPrimary === false || (e.button !== undefined && e.button !== 0)) return;
+  if (e.cancelable) e.preventDefault();
+  try {
+    const point = position(e);
+    if (choosingPivot) {
+      pivot = point;
+      choosingPivot = false;
+      draw();
+      report("付け根を指定しました。「▶ ふりふり」を押してね！");
+      return;
+    }
+    activePointer = e.pointerId ?? e.touches?.[0]?.identifier ?? "mouse";
+    drawing = true;
+    points = [point];
+    // Capture is optional; window listeners also receive release outside canvas.
+    if (e.pointerId !== undefined && canvas.setPointerCapture) {
+      try { canvas.setPointerCapture(e.pointerId); } catch (_) { /* window fallback */ }
+    }
+    draw();
+  } catch (error) { inputError(error); }
+}
+
+function matchesInput(e) {
+  if (e.pointerId !== undefined) return e.pointerId === activePointer;
+  if (e.changedTouches) return Array.from(e.changedTouches).some(t => t.identifier === activePointer);
+  return activePointer === "mouse";
+}
+
+function move(e) {
+  if (!drawing || !matchesInput(e)) return;
+  if (e.cancelable) e.preventDefault();
+  try {
+    points.push(position(e));
+    draw();
+  } catch (error) { inputError(error); }
+}
+
+function finish(e) {
+  if (!drawing || !matchesInput(e)) return;
+  if (e.cancelable) e.preventDefault();
+  try {
+    points.push(position(e));
+    drawing = false;
+    activePointer = null;
+    if (points.length < 3) throw new Error("範囲が選択されていません。指を動かしてしっぽの輪郭を囲んでください。");
+    const xs = points.map(p => p.x);
+    const ys = points.map(p => p.y);
+    const x = Math.floor(Math.min(...xs));
+    const y = Math.floor(Math.min(...ys));
+    const w = Math.ceil(Math.max(...xs)) - x;
+    const h = Math.ceil(Math.max(...ys)) - y;
+    const area = Math.abs(points.reduce((sum, p, i) => {
+      const next = points[(i + 1) % points.length];
+      return sum + p.x * next.y - next.x * p.y;
+    }, 0)) / 2;
+    if (w < 2 || h < 2 || area < 2) throw new Error("選択範囲が小さすぎるか、線になっています。しっぽを面で囲み直してください。");
+    const layer = document.createElement("canvas");
+    layer.width = w;
+    layer.height = h;
+    const lc = layer.getContext("2d");
+    if (!lc) throw new Error("しっぽの画像を作成できませんでした。画像を小さくして再試行してください。");
+    lc.beginPath();
+    points.forEach((p, i) => {
+      if (i === 0) lc.moveTo(p.x - x, p.y - y);
+      else lc.lineTo(p.x - x, p.y - y);
+    });
+    lc.closePath();
+    lc.clip();
+    lc.drawImage(image, -x, -y);
+    const pixels = lc.getImageData(0, 0, w, h).data;
+    if (!pixels.some((v, i) => i % 4 === 3 && v > 0)) {
+      throw new Error("選択範囲に画像がありません。しっぽを囲み直してください。");
+    }
+    tail = {layer, x, y, w, h};
+    points = [];
+    selecting = false;
+    choosingPivot = true;
+    draw();
+    report("しっぽを選択しました。回転させる付け根をタップしてね");
+  } catch (error) { inputError(error); }
+}
+
+function cancelInput(e) {
+  if (!drawing || !matchesInput(e)) return;
+  inputError(new Error("タッチ操作が中断されました。もう一度しっぽを囲んでください。"));
+}
+
+if (window.PointerEvent) {
+  canvas.addEventListener("pointerdown", begin);
+  window.addEventListener("pointermove", move, {passive: false});
+  window.addEventListener("pointerup", finish, {passive: false});
+  window.addEventListener("pointercancel", cancelInput);
+  canvas.addEventListener("lostpointercapture", cancelInput);
+} else {
+  canvas.addEventListener("touchstart", begin, {passive: false});
+  window.addEventListener("touchmove", move, {passive: false});
+  window.addEventListener("touchend", finish, {passive: false});
+  window.addEventListener("touchcancel", cancelInput);
+  canvas.addEventListener("mousedown", begin);
+  window.addEventListener("mousemove", move);
+  window.addEventListener("mouseup", finish);
+}
 
 function draw(time = 0) {
   if (!loaded) return;
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   ctx.drawImage(image, 0, 0);
-
-  if (tail) {
-    const angle = playing
-      ? Math.sin((time - startTime) / 240) * 0.25
-      : 0;
-
-    // しっぽの下端中央を回転の支点にする
-    const pivotX = tail.x + tail.w / 2;
-    const pivotY = tail.y + tail.h;
-
+  if (tail && pivot) {
+    const angle = playing && startTime !== null
+      ? Math.sin((time - startTime) / 240) * 0.25 : 0;
     ctx.save();
-    ctx.translate(pivotX, pivotY);
+    ctx.translate(pivot.x, pivot.y);
     ctx.rotate(angle);
-    ctx.drawImage(
-      tail.layer,
-      tail.x - pivotX,
-      tail.y - pivotY
-    );
+    ctx.drawImage(tail.layer, tail.x - pivot.x, tail.y - pivot.y);
     ctx.restore();
   }
-
   if (drawing && points.length) {
     ctx.strokeStyle = "#ff7890";
     ctx.lineWidth = Math.max(3, canvas.width / 200);
@@ -191,25 +281,50 @@ function draw(time = 0) {
     });
     ctx.stroke();
   }
+  if (pivot && !playing) {
+    ctx.fillStyle = "#ff7890";
+    ctx.beginPath();
+    ctx.arc(pivot.x, pivot.y, Math.max(3, canvas.width / 100), 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+function animationError(error) {
+  stopAnimation();
+  report("アニメーションを開始・継続できませんでした：" + error.message, true);
 }
 
 function animate(time) {
+  frameId = null;
   if (!playing) return;
-  draw(time);
-  requestAnimationFrame(animate);
+  try {
+    // Use the first RAF timestamp so start and frames share the same clock.
+    if (startTime === null) startTime = time;
+    draw(time);
+    frameId = requestAnimationFrame(animate);
+  } catch (error) { animationError(error); }
 }
 
 document.getElementById("play").onclick = () => {
-  if (!tail || playing) return;
+  if (!loaded) return report("先に画像を読み込んでください。", true);
+  if (drawing || selecting || !tail) return report("しっぽの選択が完了していません。輪郭を囲んで指を離してください。", true);
+  if (!pivot) return report("付け根が未指定です。画像のしっぽの付け根をタップしてください。", true);
+  if (playing) return report("アニメーションは再生中です。");
+  if (typeof requestAnimationFrame !== "function") return report("このブラウザーはアニメーションに対応していません。Safari を更新してください。", true);
+  stopAnimation();
   playing = true;
-  startTime = performance.now();
-  requestAnimationFrame(animate);
+  try {
+    frameId = requestAnimationFrame(animate);
+    report("しっぽをふりふりしています");
+  } catch (error) { animationError(error); }
 };
 
 document.getElementById("stop").onclick = () => {
-  playing = false;
+  stopAnimation();
   draw();
+  report("停止しました。再生するには「▶ ふりふり」を押してください。");
 };
+
 </script>
 </body>
 </html>
