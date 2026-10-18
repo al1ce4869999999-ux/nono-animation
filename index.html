@@ -48,7 +48,7 @@ footer{text-align:center;padding:5px 0;font-size:12px;color:#9f897d}
 </section><footer>のののアニメ工房 · 画像は端末内で処理されます</footer>
 </main>
 
-<script src="./analyzer.js"></script>
+<script src="./analyzer.js?v=20261018-autoselect2"></script>
 <script>
 const canvas = document.getElementById("canvas");
 const ctx = canvas.getContext("2d");
@@ -186,7 +186,8 @@ function begin(e) {
       const w=Math.max(1,Math.round(image.naturalWidth*scale)),h=Math.max(1,Math.round(image.naturalHeight*scale));
       const work=document.createElement("canvas");work.width=w;work.height=h;
       const wc=work.getContext("2d",{willReadFrequently:true});wc.drawImage(image,0,0,w,h);
-      const selected=NonoAnalyzer.selectRegion(wc.getImageData(0,0,w,h),point.x*w/canvas.width,point.y*h/canvas.height);
+      if(typeof window.NonoAnalyzer?.selectRegion!=="function")throw Error("解析プログラムが古い状態です。ページを再読み込みしてください");
+      const selected=window.NonoAnalyzer.selectRegion(wc.getImageData(0,0,w,h),point.x*w/canvas.width,point.y*h/canvas.height);
       if(selected.polygon.length<3)throw Error("輪郭を検出できませんでした");
       const sx=canvas.width/w,sy=canvas.height/h;
       points=selected.polygon.map(q=>({x:q.x*sx,y:q.y*sy}));
