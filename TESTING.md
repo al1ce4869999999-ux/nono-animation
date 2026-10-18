@@ -18,6 +18,9 @@
 - GitHub Actionsワークフロー。CI結果は実際のrunを確認するまで成功とは扱わない。
 - 実モデルを使う `tests/real_model_browser.py`。公式の人像fixtureでWorker→WASM推論→alpha受信まで確認する。ののの品質評価を代替しない。
 
+## GitHub Actionsで確認済み
+コード `67f53d4af940a4840edf91a9a91c8b8aac420e9e` に対する [run 39093088941](https://github.com/al1ce4869999999-ux/nono-animation/actions/runs/39093088941) が成功。Nodeの13件、Chromium、WebKit、手動pointer/touch fallback、**実際のTransformers.js 4.3.1 / Xenova/modnet / WASM推論**の全ステップが通過した。実モデル試験のfixtureは公式ドキュメントの人像であり、ののではない。
+
 ## 未検証・受入条件
 クラウド環境起動後にNode/Chromiumの検証は実行できた。WebKitのブラウザ実体はこの環境に未インストール。Hugging Faceはクラウドの許可ホストに含まれないため、この環境で実モデルをダウンロードしていない。CI結果とiPhone実機の結果を区別する。
 
