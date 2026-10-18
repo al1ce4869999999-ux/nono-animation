@@ -39,6 +39,7 @@ footer{text-align:center;padding:5px 0;font-size:12px;color:#9f897d}
 <label>透過前景<canvas id="foregroundPreview" aria-label="透過前景の確認"></canvas></label>
 <label>補完した背景<canvas id="backgroundPreview" aria-label="キャラクターを除去した背景の確認"></canvas></label>
 <label>最大振幅で移動したときの合成プレビュー<canvas id="motionPreview" aria-label="背景の残像と輪郭を確認する最大変位プレビュー"></canvas></label>
+<div class="row"><button id="downloadMask" class="secondary" type="button">前景マスクを保存</button><button id="downloadComparison" class="secondary" type="button">品質比較画像を保存</button></div>
 <label><input id="acceptEdges" type="checkbox">のの全体の輪郭と造形を確認した</label><br>
 <label><input id="acceptBackground" type="checkbox">補完背景と最大変位プレビューに残像や目立つ破綻がない</label>
 <div class="row"><button id="acceptML" disabled>確認した候補で動きを試す</button><button id="rejectML" class="secondary">元画像に戻す</button></div>
@@ -127,6 +128,28 @@ async function extractWholeBody(){
  }catch(e){if(job===mlJob){clearReview();draw();report("抽出を見送りました："+e.message+"。元画像は保持しています。",true);}}
  finally{if(job===mlJob)setMLBusy(false);}
 }
+function downloadCanvas(canvas,name){
+ const a=document.createElement("a");
+ a.href=canvas.toDataURL("image/png");a.download=name;a.click();
+}
+$("downloadMask").onclick=()=>{
+ if(!mlCandidate)return report("先にAIの抽出候補を生成してください",true);
+ try{downloadCanvas(mlCandidate.alpha,"nono-mask.png");}
+ catch(e){report("マスク保存に失敗："+e.message,true);}
+};
+$("downloadComparison").onclick=()=>{
+ if(!mlCandidate)return report("先にAIの抽出候補を生成してください",true);
+ try{
+  const w=mlCandidate.foreground.width,h=mlCandidate.foreground.height;
+  const sheet=document.createElement("canvas");sheet.width=w*2;sheet.height=h*2;
+  const c=sheet.getContext("2d");
+  c.drawImage(image,0,0,w,h);
+  c.drawImage(mlCandidate.foreground,w,0);
+  c.drawImage(mlCandidate.background,0,h);
+  c.drawImage($("motionPreview"),w,h);
+  downloadCanvas(sheet,"nono-quality-comparison.png");
+ }catch(e){report("比較画像保存に失敗："+e.message,true);}
+};
 $("extractBody").addEventListener("click",extractWholeBody);
 $("autoSelect").onclick=extractWholeBody;
 for(const id of ["acceptEdges","acceptBackground"])$(id).onchange=()=>{
