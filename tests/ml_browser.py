@@ -50,6 +50,14 @@ try:
           const d=c.getContext('2d').getImageData(50,50,1,1).data;
           return d[0]===240&&d[1]===20&&d[2]===30;
         }""")
+        with page.expect_download() as dl:
+            page.locator('#downloadMask').tap()
+        assert dl.value.suggested_filename=='nono-mask.png'
+        assert Path(dl.value.path()).read_bytes().startswith(b'\\x89PNG')
+        with page.expect_download() as dl:
+            page.locator('#downloadComparison').tap()
+        assert dl.value.suggested_filename=='nono-quality-comparison.png'
+        assert Path(dl.value.path()).read_bytes().startswith(b'\\x89PNG')
         original=page.evaluate('canvas.toDataURL()')
         assert page.evaluate('!playing && !bodyMode')
         page.locator('#play').tap()
