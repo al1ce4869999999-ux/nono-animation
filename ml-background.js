@@ -46,11 +46,11 @@ function maskCanvas(mask,w,h){
  ctx.putImageData(d,0,0);return c;
 }
 // Multi-source nearest-background propagation followed by diffusion inside the hole.
-// All source pixels with alpha > 2 and a safety margin are excluded from donors.
+// All source pixels with nonzero alpha and a safety margin are excluded from donors.
 function repairPixels(source,mask,w,h,margin=3){
  if(source.length!==w*h*4||mask.length!==w*h)throw Error("補完データが不正です");
  const n=w*h,hole=new Uint8Array(n),owner=new Int32Array(n).fill(-1),queue=new Int32Array(n);
- for(let i=0;i<n;i++)if(mask[i]>2){
+ for(let i=0;i<n;i++)if(mask[i]>0){
   const x=i%w,y=Math.floor(i/w);
   for(let yy=Math.max(0,y-margin);yy<=Math.min(h-1,y+margin);yy++)for(let xx=Math.max(0,x-margin);xx<=Math.min(w-1,x+margin);xx++)hole[yy*w+xx]=1;
  }
@@ -81,7 +81,6 @@ function buildLayers(source,mask,w,h){
  fc.drawImage(source,0,0,w,h);fc.globalCompositeOperation="destination-in";fc.drawImage(alpha,0,0);fc.globalCompositeOperation="source-over";
  const scale=Math.min(1,256/Math.max(w,h)),sw=Math.max(8,Math.round(w*scale)),sh=Math.max(8,Math.round(h*scale));
  const small=createCanvas(sw,sh),sc=small.getContext("2d",{willReadFrequently:true});sc.drawImage(source,0,0,sw,sh);
- const sm=createCanvas(sw,sh),mc=sm.getContext("2d",{willReadFrequently:true});mc.drawImage(alpha,0,0,sw,sh);
  const m=new Uint8Array(sw*sh);
  // Max pooling retains tiny hair/ear/hand support when reducing the repair mask.
  for(let y=0;y<h;y++)for(let x=0;x<w;x++){const i=Math.min(sh-1,Math.floor(y*sh/h))*sw+Math.min(sw-1,Math.floor(x*sw/w));m[i]=Math.max(m[i],mask[y*w+x]);}
