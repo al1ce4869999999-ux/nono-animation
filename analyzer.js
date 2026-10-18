@@ -87,5 +87,49 @@ function selectRegion(imageData,px,py,{threshold=40,maxFraction=0.38}={}){
  return {polygon:hull.map(p=>({x:p[0],y:p[1]})),bounds:{x:minx,y:miny,w:maxx-minx+1,h:maxy-miny+1},coverage:points.length/(w*h)};
 }
 
-root.NonoAnalyzer={analyze,sample,imageStats,selectRegion};
+
+function autoDetectTail(imageData){
+ const {width:w,height:h,data}=imageData;
+ if(w<20||h<20||w*h>500000) return {ok:false,reason:"画像サイズが解析対象外です"};
+ // Sample background from all four corners (robust median) and reject high-texture scenes.
+ const corners=[[2,2],[w-3,2],[2,h-3],[w-3,h-3]].map(([x,y])=>{const k=(y*w+x)*4;return [data[k],data[k+1],data[k+2]]});
+ const bg=[0,1,2].map(c=>corners.map(v=>v[c]).sort((a,b)=>a-b)[1]);
+ const dist=(k)=>Math.hypot(data[k]-bg[0],data[k+1]-bg[1],data[k+2]-bg[2]);
+ let mask=new Uint8Array(w*h),fg=0;
+ for(let y=0;y<h;y++)for(let x=0;x<w;x++){
+  const n=y*w+x,k=n*4;
+  if(data[k+3]>80&&dist(k)>52){mask[n]=1;fg++;}
+ }
+ if(fg<w*h*0.015||fg>w*h*.68)return {ok:false,reason:"背景とキャラクターの分離が難しい画像です"};
+ // Find connected components. This cannot semantically identify a tail; only isolated side protrusions.
+ const seen=new Uint8Array(w*h);let components=[];
+ for(let y=0;y<h;y++)for(let x=0;x<w;x++){
+  let n=y*w+x;if(!mask[n]||seen[n])continue;
+  const stack=[n];seen[n]=1;let count=0,minx=w,miny=h,maxx=0,maxy=0,sumx=0,sumy=0;
+  while(stack.length){
+   const q=stack.pop(),xx=q%w,yy=(q/w)|0;count++;sumx+=xx;sumy+=yy;
+   minx=Math.min(xx,minx);maxx=Math.max(xx,maxx);miny=Math.min(yy,miny);maxy=Math.max(yy,maxy);
+   for(const a of [xx>0?q-1:-1,xx<w-1?q+1:-1,yy>0?q-w:-1,yy<h-1?q+w:-1]){
+    if(a>=0&&mask[a]&&!seen[a]){seen[a]=1;stack.push(a);}
+   }
+  }
+  if(count>fg*.012&&count<fg*.29)components.push({count,minx,miny,maxx,maxy,cx:sumx/count,cy:sumy/count});
+ }
+ components=components.map(c=>{
+  const bw=c.maxx-c.minx+1,bh=c.maxy-c.miny+1;
+  const relativeSize=c.count/fg;
+  const side=Math.abs(c.cx-w/2)/(w/2);
+  const slender=Math.max(bw,bh)/Math.max(1,Math.min(bw,bh));
+  // Strong conservative threshold avoids selecting an eye, ear, or entire character.
+  const confidence=Math.min(1,.16+side*.24+Math.min(slender,4)*.12+(relativeSize>.035&&relativeSize<.20?.16:0));
+  return {...c,confidence,side,slender};
+ }).filter(c=>c.side>.42&&c.slender>1.35&&c.confidence>.75).sort((a,b)=>b.confidence-a.confidence);
+ if(!components.length||components.length>1&&components[0].confidence-components[1].confidence<.12)
+  return {ok:false,reason:"しっぽを安全に特定できませんでした（耳や背景との誤認防止）"};
+ const candidate=components[0];
+ // This is geometric shape isolation, not species-aware understanding.
+ return {ok:true,confidence:candidate.confidence,seed:{x:Math.round(candidate.cx),y:Math.round(candidate.cy)},bounds:candidate};
+}
+
+root.NonoAnalyzer={analyze,sample,imageStats,selectRegion,autoDetectTail};
 })(typeof window!=="undefined"?window:globalThis);
