@@ -16,6 +16,29 @@ function validateMask(mask,w,h){
  if(minX<clearance||minY<clearance||maxX>=w-clearance||maxY>=h-clearance)throw Error("動かすための余白が不足しています。元画像を保持します");
  return {coverage,softFraction:soft/support,bounds:{x:minX,y:minY,w:maxX-minX+1,h:maxY-minY+1}};
 }
+// Repair tiny, fully enclosed matte holes. Do not bridge open gaps between limbs.
+function fillSmallMaskHoles(mask,w,h,maxArea=Math.max(4,Math.floor(w*h*.0005))){
+ const out=new Uint8Array(mask),seen=new Uint8Array(mask.length),queue=new Int32Array(mask.length);
+ for(let i=0;i<mask.length;i++){
+  if(seen[i]||out[i]>8)continue;
+  let head=0,tail=1,touchesEdge=false,neighbors=0,alphaSum=0;
+  seen[i]=1;queue[0]=i;
+  while(head<tail){
+   const p=queue[head++],x=p%w,y=Math.floor(p/w);
+   if(x===0||y===0||x===w-1||y===h-1)touchesEdge=true;
+   for(const j of [x?p-1:-1,x<w-1?p+1:-1,y?p-w:-1,y<h-1?p+w:-1]){
+    if(j<0)continue;
+    if(out[j]<=8){if(!seen[j]){seen[j]=1;queue[tail++]=j;}}
+    else {neighbors++;alphaSum+=out[j];}
+   }
+  }
+  if(!touchesEdge&&tail<=maxArea&&neighbors){
+   const alpha=Math.max(16,Math.round(alphaSum/neighbors));
+   for(let j=0;j<tail;j++)out[queue[j]]=alpha;
+  }
+ }
+ return out;
+}
 function createCanvas(w,h){const c=document.createElement("canvas");c.width=w;c.height=h;return c;}
 function maskCanvas(mask,w,h){
  const c=createCanvas(w,h),ctx=c.getContext("2d"),d=ctx.createImageData(w,h);
@@ -53,6 +76,7 @@ function repairPixels(source,mask,w,h,margin=3){
  return {pixels:out,hole};
 }
 function buildLayers(source,mask,w,h){
+ mask=fillSmallMaskHoles(mask,w,h);
  const quality=validateMask(mask,w,h),alpha=maskCanvas(mask,w,h),foreground=createCanvas(w,h),fc=foreground.getContext("2d");
  fc.drawImage(source,0,0,w,h);fc.globalCompositeOperation="destination-in";fc.drawImage(alpha,0,0);fc.globalCompositeOperation="source-over";
  const scale=Math.min(1,256/Math.max(w,h)),sw=Math.max(8,Math.round(w*scale)),sh=Math.max(8,Math.round(h*scale));
@@ -113,6 +137,6 @@ function createClient({workerFactory=()=>new Worker("./ml-worker.js",{type:"modu
  }
  return {extract,cancel};
 }
-const api={MAX_SIDE,validateMask,repairPixels,buildLayers,maskCanvas,motionAt,createClient};
+const api={MAX_SIDE,validateMask,fillSmallMaskHoles,repairPixels,buildLayers,maskCanvas,motionAt,createClient};
 if(typeof module!=="undefined")module.exports=api;root.NonoML=api;
 })(typeof window!=="undefined"?window:globalThis);
