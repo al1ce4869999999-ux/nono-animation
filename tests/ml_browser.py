@@ -44,6 +44,12 @@ try:
         page.goto(f'http://127.0.0.1:{server.server_port}/')
         page.locator('#file').set_input_files({'name':'room-fixture.png','mimeType':'image/png','buffer':png})
         page.wait_for_function('mlCandidate !== null && !mlBusy')
+        assert page.evaluate("""()=>{
+          const c=document.getElementById('motionPreview');
+          if(c.width!==100||c.height!==100)return false;
+          const d=c.getContext('2d').getImageData(50,50,1,1).data;
+          return d[0]===240&&d[1]===20&&d[2]===30;
+        }""")
         original=page.evaluate('canvas.toDataURL()')
         assert page.evaluate('!playing && !bodyMode')
         page.locator('#play').tap()
