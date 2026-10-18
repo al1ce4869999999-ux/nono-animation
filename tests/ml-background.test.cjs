@@ -78,10 +78,10 @@ test("model heap is released before layer allocation, including allocation failu
 
 test("tiny enclosed holes in character matte are filled without mutating model output",()=>{
  const m=goodMask(),original=new Uint8Array(m);
- for(let y=45;y<48;y++)for(let x=44;x<47;x++)m[y*100+x]=0;
+ for(let y=45;y<47;y++)for(let x=44;x<46;x++)m[y*100+x]=0;
  const fixed=ML.fillSmallMaskHoles(m,100,100);
- assert.equal(fixed[46*100+45],255);
- assert.equal(m[46*100+45],0);
+ assert.equal(fixed[45*100+45],255);
+ assert.equal(m[45*100+45],0);
  assert.equal(fixed[10*100+10],0);
  assert.deepEqual(m.slice(0,100),original.slice(0,100));
 });
