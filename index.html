@@ -31,7 +31,7 @@ footer{text-align:center;padding:5px 0;font-size:12px;color:#9f897d}
 <canvas id="canvas" width="500" height="500" aria-label="アニメーション編集キャンバス"></canvas>
 <p id="message" role="status" aria-live="polite">画像を選んでね</p>
 <div class="row"><label class="upload">📷 画像を選ぶ（全自動）<input type="file" id="file" accept="image/*"></label><button id="autoSelect">✨ タップで自動切り抜き</button><button class="secondary" id="select">✏️ 手動で囲む</button></div>
-<p class="hint">画像読み込み後、自動でしっぽ候補を探して再生します。検出できない画像では誤ったパーツを動かさず、手動操作に切り替えられます。</p><div class="row"><button class="secondary" id="addPart">＋ パーツを追加</button><button class="secondary" id="undoPart">↶ 最後を削除</button></div><p id="partCount" class="hint">パーツ：0個</p><div class="row"><button id="inspectImage" class="secondary">🔍 イラストの特徴を解析</button></div><p id="imageInfo" class="hint">明るさ・コントラスト・輪郭の複雑さを端末内で計算します。</p>
+<p class="hint">画像は自動解析します。ただし誤検出による画像破損を防ぐため、自動切り抜き・自動再生は一時停止しています。</p><div class="row"><button class="secondary" id="addPart">＋ パーツを追加</button><button class="secondary" id="undoPart">↶ 最後を削除</button></div><p id="partCount" class="hint">パーツ：0個</p><div class="row"><button id="inspectImage" class="secondary">🔍 イラストの特徴を解析</button></div><p id="imageInfo" class="hint">明るさ・コントラスト・輪郭の複雑さを端末内で計算します。</p>
 </section>
 <section class="card"><div class="sectiontitle">② シーンから動きを選ぶ</div><textarea id="scene" rows="3" maxlength="3000" placeholder="例：ののは嬉しくてしっぽをぱたぱた振る。耳もぴくっと動いた。" style="width:100%;resize:vertical;border:1px solid #dfc9bd;border-radius:14px;padding:12px;font:inherit;background:#fffaf7;color:#51443d"></textarea><div class="row"><button id="applyScene" class="secondary">✨ 文章から動きを提案</button></div><p id="sceneInfo" class="hint">無料のキーワード判定です。AI動画生成ではありません。</p></section><section class="card">
 <div class="sectiontitle">③ 動きを決める</div>
@@ -128,7 +128,10 @@ async function tryFullAuto(){
   const work=document.createElement("canvas");work.width=w;work.height=h;
   const c=work.getContext("2d",{willReadFrequently:true});c.drawImage(image,0,0,w,h);
   const pixels=c.getImageData(0,0,w,h),detected=NonoAnalyzer.autoDetectTail(pixels);
-  if(!detected.ok){report("全自動解析："+detected.reason+"。必要なら手動で囲めます。");return;}
+  // Safety: geometry-only heuristics cannot reliably isolate the tail in detailed character illustrations.
+  // Never auto-cut or replace pixels without a validated semantic segmentation mask.
+  if(detected.ok){report("画像を解析しました。現在の方式ではしっぽと背景を確実に区別できないため、画像を壊す自動切り抜きは停止しています。");return;}
+  if(!detected.ok){report("画像を解析しました。自動切り抜きは品質保護のため停止中です。元画像はそのまま保持します。");return;}
   const point=detected.seed;
   const selected=NonoAnalyzer.selectRegion(pixels,point.x,point.y,{threshold:38,maxFraction:.2});
   if(selected.polygon.length<3||selected.coverage>.2)throw Error("範囲の信頼性が不足");
