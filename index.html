@@ -30,8 +30,8 @@ footer{text-align:center;padding:5px 0;font-size:12px;color:#9f897d}
 <div class="sectiontitle">① イラストを読み込む</div>
 <canvas id="canvas" width="500" height="500" aria-label="アニメーション編集キャンバス"></canvas>
 <p id="message" role="status" aria-live="polite">画像を選んでね</p>
-<div class="row"><label class="upload">📷 画像を選ぶ<input type="file" id="file" accept="image/*"></label><button id="autoSelect">✨ タップで自動切り抜き</button><button class="secondary" id="select">✏️ 手動で囲む</button></div>
-<p class="hint">おすすめ：自動切り抜きを押し、しっぽの先端を1回タップ。色のつながりから範囲を推定します。うまくいかなければ手動でも囲めます。</p><div class="row"><button class="secondary" id="addPart">＋ パーツを追加</button><button class="secondary" id="undoPart">↶ 最後を削除</button></div><p id="partCount" class="hint">パーツ：0個</p><div class="row"><button id="inspectImage" class="secondary">🔍 イラストの特徴を解析</button></div><p id="imageInfo" class="hint">明るさ・コントラスト・輪郭の複雑さを端末内で計算します。</p>
+<div class="row"><label class="upload">📷 画像を選ぶ（全自動）<input type="file" id="file" accept="image/*"></label><button id="autoSelect">✨ タップで自動切り抜き</button><button class="secondary" id="select">✏️ 手動で囲む</button></div>
+<p class="hint">画像読み込み後、自動でしっぽ候補を探して再生します。検出できない画像では誤ったパーツを動かさず、手動操作に切り替えられます。</p><div class="row"><button class="secondary" id="addPart">＋ パーツを追加</button><button class="secondary" id="undoPart">↶ 最後を削除</button></div><p id="partCount" class="hint">パーツ：0個</p><div class="row"><button id="inspectImage" class="secondary">🔍 イラストの特徴を解析</button></div><p id="imageInfo" class="hint">明るさ・コントラスト・輪郭の複雑さを端末内で計算します。</p>
 </section>
 <section class="card"><div class="sectiontitle">② シーンから動きを選ぶ</div><textarea id="scene" rows="3" maxlength="3000" placeholder="例：ののは嬉しくてしっぽをぱたぱた振る。耳もぴくっと動いた。" style="width:100%;resize:vertical;border:1px solid #dfc9bd;border-radius:14px;padding:12px;font:inherit;background:#fffaf7;color:#51443d"></textarea><div class="row"><button id="applyScene" class="secondary">✨ 文章から動きを提案</button></div><p id="sceneInfo" class="hint">無料のキーワード判定です。AI動画生成ではありません。</p></section><section class="card">
 <div class="sectiontitle">③ 動きを決める</div>
@@ -48,7 +48,7 @@ footer{text-align:center;padding:5px 0;font-size:12px;color:#9f897d}
 </section><footer>のののアニメ工房 · 画像は端末内で処理されます</footer>
 </main>
 
-<script src="./analyzer.js?v=20261018-autoselect2"></script>
+<script src="./analyzer.js?v=20261018-fullauto1"></script>
 <script>
 const canvas = document.getElementById("canvas");
 const ctx = canvas.getContext("2d");
@@ -118,6 +118,37 @@ function resetSelection() {
   pivot = null;
 }
 
+async function tryFullAuto(){
+ if(!loaded||typeof NonoAnalyzer?.autoDetectTail!=="function")return report("自動解析の読み込みに失敗しました。再読み込みしてください",true);
+ report("しっぽ候補を全自動で解析中…");
+ await new Promise(resolve=>setTimeout(resolve,50));
+ try{
+  const ratio=Math.min(1,256/Math.max(image.naturalWidth,image.naturalHeight));
+  const w=Math.max(1,Math.round(image.naturalWidth*ratio)),h=Math.max(1,Math.round(image.naturalHeight*ratio));
+  const work=document.createElement("canvas");work.width=w;work.height=h;
+  const c=work.getContext("2d",{willReadFrequently:true});c.drawImage(image,0,0,w,h);
+  const pixels=c.getImageData(0,0,w,h),detected=NonoAnalyzer.autoDetectTail(pixels);
+  if(!detected.ok){report("全自動解析："+detected.reason+"。必要なら手動で囲めます。");return;}
+  const point=detected.seed;
+  const selected=NonoAnalyzer.selectRegion(pixels,point.x,point.y,{threshold:38,maxFraction:.2});
+  if(selected.polygon.length<3||selected.coverage>.2)throw Error("範囲の信頼性が不足");
+  const sx=canvas.width/w,sy=canvas.height/h;
+  const polygon=selected.polygon.map(p=>({x:p.x*sx,y:p.y*sy}));
+  const minx=Math.max(0,Math.floor(Math.min(...polygon.map(p=>p.x))));
+  const miny=Math.max(0,Math.floor(Math.min(...polygon.map(p=>p.y))));
+  const maxx=Math.min(canvas.width,Math.ceil(Math.max(...polygon.map(p=>p.x))));
+  const maxy=Math.min(canvas.height,Math.ceil(Math.max(...polygon.map(p=>p.y))));
+  if(maxx-minx<4||maxy-miny<4)throw Error("領域が小さすぎます");
+  const layer=document.createElement("canvas");layer.width=maxx-minx;layer.height=maxy-miny;
+  const lc=layer.getContext("2d");lc.beginPath();polygon.forEach((p,i)=>i?lc.lineTo(p.x-minx,p.y-miny):lc.moveTo(p.x-minx,p.y-miny));lc.closePath();lc.clip();lc.drawImage(image,-minx,-miny);
+  tail={layer,x:minx,y:miny,w:layer.width,h:layer.height,mask:polygon};
+  const centerX=(minx+maxx)/2,centerY=(miny+maxy)/2;
+  pivot={x:centerX<canvas.width/2?maxx:minx,y:centerY};
+  cachedBackground=null;countParts();draw();$("play").click();
+  report("全自動で候補を抽出して再生中（推定精度："+Math.round(detected.confidence*100)+"・保証値ではありません）。違う部分が動いたら停止してください。");
+ }catch(err){tail=null;pivot=null;countParts();draw();report("全自動では安全に抽出できませんでした："+err.message);}
+}
+
 document.getElementById("file").onchange = e => {
   const file = e.target.files[0];
   if (!file) return;
@@ -133,7 +164,7 @@ document.getElementById("file").onchange = e => {
     loaded = true;
     try {const c=document.createElement("canvas");c.width=image.naturalWidth;c.height=image.naturalHeight;c.getContext("2d").drawImage(image,0,0);sourceDataUrl=c.toDataURL("image/png");}catch(_){sourceDataUrl=null;}
     draw();
-    report("「しっぽを囲む」を押してね");
+    tryFullAuto();
     URL.revokeObjectURL(url);
   };
   image.onerror = () => {
