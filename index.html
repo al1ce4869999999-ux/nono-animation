@@ -30,8 +30,8 @@ footer{text-align:center;padding:5px 0;font-size:12px;color:#9f897d}
 <div class="sectiontitle">① イラストを読み込む</div>
 <canvas id="canvas" width="500" height="500" aria-label="アニメーション編集キャンバス"></canvas>
 <p id="message" role="status" aria-live="polite">画像を選んでね</p>
-<div class="row"><label class="upload">📷 画像を選ぶ<input type="file" id="file" accept="image/*"></label><button class="secondary" id="select">✏️ しっぽを囲む</button></div>
-<p class="hint">パーツを囲み、付け根をタップ。追加を繰り返すと、耳・しっぽ・手など複数の場所を動かせます。</p><div class="row"><button class="secondary" id="addPart">＋ パーツを追加</button><button class="secondary" id="undoPart">↶ 最後を削除</button></div><p id="partCount" class="hint">パーツ：0個</p><div class="row"><button id="inspectImage" class="secondary">🔍 イラストの特徴を解析</button></div><p id="imageInfo" class="hint">明るさ・コントラスト・輪郭の複雑さを端末内で計算します。</p>
+<div class="row"><label class="upload">📷 画像を選ぶ<input type="file" id="file" accept="image/*"></label><button id="autoSelect">✨ タップで自動切り抜き</button><button class="secondary" id="select">✏️ 手動で囲む</button></div>
+<p class="hint">おすすめ：自動切り抜きを押し、しっぽの先端を1回タップ。色のつながりから範囲を推定します。うまくいかなければ手動でも囲めます。</p><div class="row"><button class="secondary" id="addPart">＋ パーツを追加</button><button class="secondary" id="undoPart">↶ 最後を削除</button></div><p id="partCount" class="hint">パーツ：0個</p><div class="row"><button id="inspectImage" class="secondary">🔍 イラストの特徴を解析</button></div><p id="imageInfo" class="hint">明るさ・コントラスト・輪郭の複雑さを端末内で計算します。</p>
 </section>
 <section class="card"><div class="sectiontitle">② シーンから動きを選ぶ</div><textarea id="scene" rows="3" maxlength="3000" placeholder="例：ののは嬉しくてしっぽをぱたぱた振る。耳もぴくっと動いた。" style="width:100%;resize:vertical;border:1px solid #dfc9bd;border-radius:14px;padding:12px;font:inherit;background:#fffaf7;color:#51443d"></textarea><div class="row"><button id="applyScene" class="secondary">✨ 文章から動きを提案</button></div><p id="sceneInfo" class="hint">無料のキーワード判定です。AI動画生成ではありません。</p></section><section class="card">
 <div class="sectiontitle">③ 動きを決める</div>
@@ -66,6 +66,7 @@ let playing = false;
 let startTime = null;
 let frameId = null;
 let activePointer = null;
+let autoSelecting=false;
 const $ = id => document.getElementById(id);
 let recording = false;
 const parts=[];
@@ -108,6 +109,7 @@ function stopAnimation() {
 
 function resetSelection() {
   selecting = false;
+  autoSelecting=false;
   drawing = false;
   choosingPivot = false;
   activePointer = null;
@@ -155,6 +157,7 @@ function position(e) {
   };
 }
 
+$("autoSelect").onclick=()=>{if(!loaded)return report("先に画像を読み込んでください",true);stopAnimation();archivePart();resetSelection();autoSelecting=true;report("しっぽの先端を1回タップしてください。色のつながりから自動選択します");};
 document.getElementById("select").onclick = () => {
   if (!loaded) return report("先に画像を読み込んでください。", true);
   stopAnimation();
@@ -173,11 +176,31 @@ function inputError(error) {
 }
 
 function begin(e) {
-  if ((!selecting && !choosingPivot) || activePointer !== null) return;
+  if ((!selecting && !choosingPivot && !autoSelecting) || activePointer !== null) return;
   if (e.isPrimary === false || (e.button !== undefined && e.button !== 0)) return;
   if (e.cancelable) e.preventDefault();
   try {
     const point = position(e);
+    if(autoSelecting){
+      const scale=Math.min(1,320/Math.max(image.naturalWidth,image.naturalHeight));
+      const w=Math.max(1,Math.round(image.naturalWidth*scale)),h=Math.max(1,Math.round(image.naturalHeight*scale));
+      const work=document.createElement("canvas");work.width=w;work.height=h;
+      const wc=work.getContext("2d",{willReadFrequently:true});wc.drawImage(image,0,0,w,h);
+      const selected=NonoAnalyzer.selectRegion(wc.getImageData(0,0,w,h),point.x*w/canvas.width,point.y*h/canvas.height);
+      if(selected.polygon.length<3)throw Error("輪郭を検出できませんでした");
+      const sx=canvas.width/w,sy=canvas.height/h;
+      points=selected.polygon.map(q=>({x:q.x*sx,y:q.y*sy}));
+      const minx=Math.max(0,Math.floor(Math.min(...points.map(q=>q.x))));
+      const miny=Math.max(0,Math.floor(Math.min(...points.map(q=>q.y))));
+      const maxx=Math.min(canvas.width,Math.ceil(Math.max(...points.map(q=>q.x))));
+      const maxy=Math.min(canvas.height,Math.ceil(Math.max(...points.map(q=>q.y))));
+      const layer=document.createElement("canvas");layer.width=Math.max(1,maxx-minx);layer.height=Math.max(1,maxy-miny);
+      const lc=layer.getContext("2d");lc.beginPath();points.forEach((q,i)=>i?lc.lineTo(q.x-minx,q.y-miny):lc.moveTo(q.x-minx,q.y-miny));lc.closePath();lc.clip();lc.drawImage(image,-minx,-miny);
+      tail={layer,x:minx,y:miny,w:layer.width,h:layer.height,mask:points.map(q=>({...q}))};
+      pivot={x:(minx+maxx)/2,y:maxy};autoSelecting=false;points=[];cachedBackground=null;countParts();draw();
+      report("自動選択しました！ 違う場所が動く場合は、しっぽの別の場所をタップして試してね");
+      return;
+    }
     if (choosingPivot) {
       pivot = point;
       choosingPivot = false;
