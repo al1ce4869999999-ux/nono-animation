@@ -31,20 +31,20 @@ footer{text-align:center;padding:5px 0;font-size:12px;color:#9f897d}
 <canvas id="canvas" width="500" height="500" aria-label="アニメーション編集キャンバス"></canvas>
 <p id="message" role="status" aria-live="polite">画像を選んでね</p>
 <div class="row"><label class="upload">📷 画像を選ぶ<input type="file" id="file" accept="image/*"></label><button class="secondary" id="select">✏️ しっぽを囲む</button></div>
-<p class="hint">しっぽの輪郭を指でなぞって、付け根をタップ。画像内のパーツが動きます。</p>
+<p class="hint">パーツを囲み、付け根をタップ。追加を繰り返すと、耳・しっぽ・手など複数の場所を動かせます。</p><div class="row"><button class="secondary" id="addPart">＋ パーツを追加</button><button class="secondary" id="undoPart">↶ 最後を削除</button></div><p id="partCount" class="hint">パーツ：0個</p>
 </section>
-<section class="card">
-<div class="sectiontitle">② 動きを決める</div>
+<section class="card"><div class="sectiontitle">② シーンから動きを選ぶ</div><textarea id="scene" rows="3" maxlength="3000" placeholder="例：ののは嬉しくてしっぽをぱたぱた振る。耳もぴくっと動いた。" style="width:100%;resize:vertical;border:1px solid #dfc9bd;border-radius:14px;padding:12px;font:inherit;background:#fffaf7;color:#51443d"></textarea><div class="row"><button id="applyScene" class="secondary">✨ 文章から動きを提案</button></div><p id="sceneInfo" class="hint">無料のキーワード判定です。AI動画生成ではありません。</p></section><section class="card">
+<div class="sectiontitle">③ 動きを決める</div>
 <div class="setting"><label for="preset">動きの種類</label><select id="preset"><option value="wag">しっぽをふりふり</option><option value="happy">うれしい！ぱたぱた</option><option value="slow">ゆったり、ふわふわ</option><option value="nervous">おずおず、ちょこちょこ</option></select></div>
 <div class="setting"><label for="speed">速さ <output id="speedValue">1.0倍</output></label><input id="speed" type="range" min="0.3" max="3" step="0.1" value="1"></div>
 <div class="setting"><label for="amplitude">揺れ幅 <output id="amplitudeValue">15°</output></label><input id="amplitude" type="range" min="2" max="45" step="1" value="15"></div>
 <div class="row"><button id="play">▶ 再生する</button><button class="secondary" id="stop">■ 停止</button></div>
 </section>
 <section class="card">
-<div class="sectiontitle">③ 保存する</div>
+<div class="sectiontitle">④ 保存する</div>
 <div class="setting"><label for="duration">動画の長さ <output id="durationValue">3秒</output></label><input id="duration" type="range" min="1" max="10" step="1" value="3"></div>
 <div class="row"><button class="secondary" id="saveImage">🖼️ 画像を保存</button><button id="saveVideo">🎬 動画を書き出す</button></div>
-<p class="hint">画像はPNG。動画はブラウザが録画に対応する場合に保存できます。iPhone Safariでは機種・OSによって動画書き出しが使えない場合があります。</p>
+<div class="row" style="margin-top:9px"><button class="secondary" id="saveProject">💾 制作データを保存</button><label class="upload" style="background:#f4e8e0;color:#705549">📂 制作データを開く<input type="file" id="openProject" accept="application/json,.json"></label></div><p class="hint">画像はPNG、制作データはJSONで保存。動画はブラウザ対応時のみ保存できます。iPhone Safariでの動画保存は実機確認が必要です。</p>
 </section><footer>のののアニメ工房 · 画像は端末内で処理されます</footer>
 </main>
 
@@ -67,6 +67,14 @@ let frameId = null;
 let activePointer = null;
 const $ = id => document.getElementById(id);
 let recording = false;
+const parts=[];
+let sourceDataUrl=null;
+function countParts(){ $("partCount").textContent="パーツ："+(parts.length+(tail&&pivot?1:0))+"個"; }
+function archivePart(){if(tail&&pivot){parts.push({layer:tail.layer,x:tail.x,y:tail.y,w:tail.w,h:tail.h,pivot:{...pivot},mask:tail.mask});tail=null;pivot=null;countParts();}}
+function paintBackground(){ctx.drawImage(image,0,0);const all=[...parts,...(tail&&pivot?[{...tail,pivot}]:[])];for(const p of all){if(!p.mask)continue;const edge=Math.max(3,Math.floor(Math.min(canvas.width,canvas.height)/90));const bx=Math.max(0,Math.min(canvas.width-1,Math.floor(p.x+p.w/2)));const by=Math.max(0,Math.min(canvas.height-1,Math.floor(p.y+p.h+edge)));const sample=document.createElement("canvas");sample.width=1;sample.height=1;const sc=sample.getContext("2d");sc.drawImage(image,bx,by,1,1,0,0,1,1);const pixel=sc.getImageData(0,0,1,1).data;ctx.save();ctx.beginPath();p.mask.forEach((v,i)=>i?ctx.lineTo(v.x,v.y):ctx.moveTo(v.x,v.y));ctx.closePath();ctx.clip();ctx.fillStyle="rgb("+pixel[0]+","+pixel[1]+","+pixel[2]+")";ctx.fillRect(p.x-2,p.y-2,p.w+4,p.h+4);ctx.restore();}}
+$("addPart").addEventListener("click",()=>{if(!loaded)return report("先に画像を読み込んでください。",true);archivePart();$("select").click();});
+$("undoPart").addEventListener("click",()=>{stopAnimation();if(tail&&pivot){tail=null;pivot=null;}else parts.pop();countParts();draw();report("最後のパーツを削除しました");});
+$("applyScene").addEventListener("click",()=>{const t=$("scene").value;if(!t.trim())return report("シーンの文章を入力してください",true);let preset="wag";if(/怖|不安|びく|おずおず|警戒|そっと|怯/.test(t))preset="nervous";else if(/眠|寝|ゆっくり|ふわ|静か|のんびり/.test(t))preset="slow";else if(/嬉|喜|楽しい|元気|ぱたぱた|走|はしゃ/.test(t))preset="happy";$("preset").value=preset;$("preset").dispatchEvent(new Event("change"));$("sceneInfo").textContent="提案："+$("preset").selectedOptions[0].text+"。文章全体の動作を自動生成するものではありません。";report("文章から動きの設定を選びました");});
 const motion = {speed:1, amplitude:15, preset:"wag"};
 const presets = {wag:[1,15],happy:[2,25],slow:[0.6,9],nervous:[2.7,6]};
 function updateMotionUI(){motion.speed=Number($("speed").value);motion.amplitude=Number($("amplitude").value);motion.preset=$("preset").value;$("speedValue").textContent=motion.speed.toFixed(1)+"倍";$("amplitudeValue").textContent=motion.amplitude+"°";}
@@ -100,7 +108,7 @@ document.getElementById("file").onchange = e => {
   const file = e.target.files[0];
   if (!file) return;
   stopAnimation();
-  resetSelection();
+  resetSelection();parts.length=0;sourceDataUrl=null;countParts();
   loaded = false;
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   report("画像を読み込んでいます…");
@@ -109,6 +117,7 @@ document.getElementById("file").onchange = e => {
     canvas.width = image.naturalWidth;
     canvas.height = image.naturalHeight;
     loaded = true;
+    try {const c=document.createElement("canvas");c.width=image.naturalWidth;c.height=image.naturalHeight;c.getContext("2d").drawImage(image,0,0);sourceDataUrl=c.toDataURL("image/png");}catch(_){sourceDataUrl=null;}
     draw();
     report("「しっぽを囲む」を押してね");
     URL.revokeObjectURL(url);
@@ -161,7 +170,7 @@ function begin(e) {
       pivot = point;
       choosingPivot = false;
       draw();
-      report("付け根を指定しました。「▶ ふりふり」を押してね！");
+      countParts();report("付け根を指定しました。再生するか「パーツを追加」で続けてね！");
       return;
     }
     activePointer = e.pointerId ?? e.touches?.[0]?.identifier ?? "mouse";
@@ -226,7 +235,7 @@ function finish(e) {
     if (!pixels.some((v, i) => i % 4 === 3 && v > 0)) {
       throw new Error("選択範囲に画像がありません。しっぽを囲み直してください。");
     }
-    tail = {layer, x, y, w, h};
+    tail = {layer, x, y, w, h,mask:points.map(p=>({...p}))};
     points = [];
     selecting = false;
     choosingPivot = true;
@@ -259,8 +268,13 @@ if (window.PointerEvent) {
 function draw(time = 0) {
   if (!loaded) return;
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-  ctx.drawImage(image, 0, 0);
-  if (tail && pivot) {
+  paintBackground();
+  for(const part of [...parts,...(tail&&pivot?[{...tail,pivot}]:[])]) {
+    const angle = playing && startTime !== null ? Math.sin((time-startTime)*motion.speed/240)*(motion.amplitude*Math.PI/180) : 0;
+    ctx.save();ctx.translate(part.pivot.x,part.pivot.y);ctx.rotate(angle);
+    ctx.drawImage(part.layer,part.x-part.pivot.x,part.y-part.pivot.y);ctx.restore();
+  }
+  if (false && tail && pivot) {
     const angle = playing && startTime !== null
       ? Math.sin((time - startTime) * motion.speed / 240) * (motion.amplitude * Math.PI / 180) : 0;
     ctx.save();
@@ -305,8 +319,8 @@ function animate(time) {
 
 document.getElementById("play").onclick = () => {
   if (!loaded) return report("先に画像を読み込んでください。", true);
-  if (drawing || selecting || !tail) return report("しっぽの選択が完了していません。輪郭を囲んで指を離してください。", true);
-  if (!pivot) return report("付け根が未指定です。画像のしっぽの付け根をタップしてください。", true);
+  if (drawing || selecting || (!tail&&!parts.length)) return report("しっぽの選択が完了していません。輪郭を囲んで指を離してください。", true);
+  if (!pivot&&!parts.length) return report("付け根が未指定です。画像のしっぽの付け根をタップしてください。", true);
   if (playing) return report("アニメーションは再生中です。");
   if (typeof requestAnimationFrame !== "function") return report("このブラウザーはアニメーションに対応していません。Safari を更新してください。", true);
   stopAnimation();
@@ -331,7 +345,7 @@ $("saveImage").addEventListener("click",()=>{
 });
 $("saveVideo").addEventListener("click",async()=>{
   if(recording)return;
-  if(!loaded||!tail||!pivot)return report("先に画像としっぽ、付け根を指定してください。",true);
+  if(!loaded||(!parts.length&&(!tail||!pivot)))return report("先に画像としっぽ、付け根を指定してください。",true);
   if(typeof canvas.captureStream!=="function"||typeof MediaRecorder==="undefined")return report("このSafariでは動画録画に対応していません。画像保存をご利用ください。",true);
   const types=["video/mp4;codecs=avc1.42E01E","video/mp4","video/webm;codecs=vp9","video/webm"];
   const type=types.find(t=>MediaRecorder.isTypeSupported(t));
@@ -357,6 +371,11 @@ $("saveVideo").addEventListener("click",async()=>{
   }catch(error){report("動画の書き出しに失敗しました："+error.message,true);}
   finally{recording=false;$("saveVideo").disabled=false;stopAnimation();draw();if(stream)stream.getTracks().forEach(t=>t.stop());}
 });
+
+function downloadData(name,blob){const url=URL.createObjectURL(blob),a=document.createElement("a");a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),60000);}
+$("saveProject").addEventListener("click",()=>{if(!loaded||!sourceDataUrl)return report("画像を読み込んでから保存してください",true);const all=[...parts,...(tail&&pivot?[{...tail,pivot}]:[])];const data={format:"nono-studio",version:1,image:sourceDataUrl,scene:$("scene").value,motion:{...motion},duration:Number($("duration").value),parts:all.map(p=>({mask:p.mask,pivot:p.pivot,x:p.x,y:p.y,w:p.w,h:p.h}))};downloadData("nono-project.json",new Blob([JSON.stringify(data)],{type:"application/json"}));report("制作データを保存しました");});
+$("openProject").addEventListener("change",async e=>{const file=e.target.files[0];if(!file)return;try{const data=JSON.parse(await file.text());if(data.format!=="nono-studio"||data.version!==1||typeof data.image!=="string"||!data.image.startsWith("data:image/")||data.image.length>15000000||!Array.isArray(data.parts)||data.parts.length>30)throw Error("対応していない制作データです");stopAnimation();const im=new Image();await new Promise((resolve,reject)=>{im.onload=resolve;im.onerror=reject;im.src=data.image;});if(im.naturalWidth*im.naturalHeight>12000000)throw Error("画像が大きすぎます");image.src=data.image;await image.decode();canvas.width=image.naturalWidth;canvas.height=image.naturalHeight;loaded=true;sourceDataUrl=data.image;resetSelection();parts.length=0;for(const p of data.parts){if(!Array.isArray(p.mask)||p.mask.length<3||p.mask.length>20000||!p.mask.every(q=>Number.isFinite(q.x)&&Number.isFinite(q.y))||!p.pivot||!Number.isFinite(p.pivot.x)||!Number.isFinite(p.pivot.y)||![p.x,p.y,p.w,p.h].every(Number.isFinite)||p.w<=0||p.h<=0||p.w*p.h>12000000)continue;const layer=document.createElement("canvas");layer.width=p.w;layer.height=p.h;const lc=layer.getContext("2d");lc.beginPath();p.mask.forEach((q,i)=>i?lc.lineTo(q.x-p.x,q.y-p.y):lc.moveTo(q.x-p.x,q.y-p.y));lc.closePath();lc.clip();lc.drawImage(image,-p.x,-p.y);parts.push({...p,layer});}const m=data.motion||{};$("speed").value=Number(m.speed)||1;$("amplitude").value=Number(m.amplitude)||15;$("preset").value=presets[m.preset]?m.preset:"wag";updateMotionUI();$("duration").value=data.duration||3;$("duration").dispatchEvent(new Event("input"));$("scene").value=String(data.scene||"").slice(0,3000);countParts();draw();report("制作データを読み込みました");}catch(err){report("制作データを開けません："+err.message,true);}finally{e.target.value="";}});
+
 </script>
 </body>
 </html>
