@@ -38,7 +38,7 @@ footer{text-align:center;padding:5px 0;font-size:12px;color:#9f897d}
 <p>抽出候補です。成功判定ではありません。髪・耳・手・しっぽの欠け、背景の残り、補完のにじみを確認してください。</p>
 <label>透過前景<canvas id="foregroundPreview" aria-label="透過前景の確認"></canvas></label>
 <label>補完した背景<canvas id="backgroundPreview" aria-label="キャラクターを除去した背景の確認"></canvas></label>
-<label>最大振幅で移動したときの合成プレビュー<canvas id="motionPreview" aria-label="背景の残像と輪郭を確認する最大変位プレビュー"></canvas></label>
+<label>最大振幅で移動したときの合成プレビュー<canvas id="motionPreview" aria-label="背景の残像と輪郭を確認する最大変位プレビュー"></canvas></label><div class="row"><button id="previewPrevious" class="secondary" type="button">← 別方向を確認</button><button id="previewNext" class="secondary" type="button">別方向を確認 →</button></div><p class="hint" id="previewDirection">移動方向：右下（1 / 4）</p>
 <div class="row"><button id="downloadMask" class="secondary" type="button">前景マスクを保存</button><button id="downloadComparison" class="secondary" type="button">品質比較画像を保存</button></div>
 <label><input id="acceptEdges" type="checkbox">のの全体の輪郭と造形を確認した</label><br>
 <label><input id="acceptBackground" type="checkbox">補完背景と最大変位プレビューに残像や目立つ破綻がない</label>
@@ -99,16 +99,31 @@ function resetBodyMode(){
  mlJob++;mlClient.cancel();setMLBusy(false);clearReview();
  bodyMode=false;bodyLayer=null;bodyBackground=null;bodyPivot=null;bodyAlpha=null;$("restoreOriginal").hidden=true;
 }
+let previewDirectionIndex=0;
+const previewDirections=[{label:"右下",x:1,y:1},{label:"左下",x:-1,y:1},{label:"左上",x:-1,y:-1},{label:"右上",x:1,y:-1}];
+function renderMotionPreview(result){
+ if(!result)return;
+ const preview=$("motionPreview");
+ preview.width=result.foreground.width;preview.height=result.foreground.height;
+ const p=preview.getContext("2d"),side=Math.min(preview.width,preview.height),dir=previewDirections[previewDirectionIndex];
+ p.drawImage(result.background,0,0);
+ p.drawImage(result.foreground,Math.round(side*.006*dir.x),Math.round(side*.009*dir.y));
+ $("previewDirection").textContent="移動方向："+dir.label+"（"+(previewDirectionIndex+1)+" / 4）";
+}
+function cycleMotionPreview(step){
+ if(!mlCandidate)return;
+ previewDirectionIndex=(previewDirectionIndex+step+previewDirections.length)%previewDirections.length;
+ renderMotionPreview(mlCandidate);
+}
+$("previewPrevious").onclick=()=>cycleMotionPreview(-1);
+$("previewNext").onclick=()=>cycleMotionPreview(1);
 function reviewCandidate(result){
  clearReview();mlCandidate=result;$("mlReview").hidden=false;
  for(const [id,layer] of [["foregroundPreview",result.foreground],["backgroundPreview",result.background]]){
   const c=$(id);c.width=layer.width;c.height=layer.height;c.getContext("2d").drawImage(layer,0,0);
  }
- const preview=$("motionPreview");preview.width=result.foreground.width;preview.height=result.foreground.height;
- const px=preview.getContext("2d"),shortSide=Math.min(preview.width,preview.height);
- // Preview worst-case translation independently of the playback phase to reveal hidden ghosts.
- px.drawImage(result.background,0,0);
- px.drawImage(result.foreground,Math.round(shortSide*.006),Math.round(shortSide*.009));
+ previewDirectionIndex=0;
+ renderMotionPreview(result);
  report("抽出候補を作成しました。輪郭と補完背景を確認してください。まだ再生できません。");
 }
 async function extractWholeBody(){
