@@ -98,18 +98,18 @@ try:
         page.locator('#saveVideo').tap()
         assert '対応' in page.locator('#message').inner_text()
         assert page.evaluate('!recording')
-        page.evaluate('window.MediaRecorder=window.savedRecorder')
+        page.evaluate('() => {window.MediaRecorder=window.savedRecorder;}')
         if supported:
-            page.evaluate('''window.MediaRecorder=class {
+            page.evaluate('''() => {window.MediaRecorder=class {
               static isTypeSupported(){return true;}
               state='inactive';
               start(){this.state='recording';setTimeout(()=>this.onerror({error:new Error('recorder test failure')}),0);}
               stop(){this.state='inactive';this.onstop?.();}
-            }''')
+            };}''')
             page.locator('#saveVideo').tap()
             page.wait_for_function('!recording && message.textContent.includes("recorder test failure")')
             assert not page.locator('#file').is_disabled()
-            page.evaluate('window.MediaRecorder=window.savedRecorder')
+            page.evaluate('() => {window.MediaRecorder=window.savedRecorder;}')
         page.locator('#restoreOriginal').tap()
         assert page.evaluate('!bodyMode && canvas.toDataURL()') == original
         page.evaluate("window.modelMode='error'")
