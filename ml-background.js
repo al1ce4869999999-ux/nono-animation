@@ -95,12 +95,14 @@ function createClient({workerFactory=()=>new Worker("./ml-worker.js",{type:"modu
     if(data.type==="progress"){onProgress(data);return;}
     if(data.type==="error"){fail(Error(data.message));return;}
     if(data.type==="result"){
+     // Release the model's WASM heap before allocating full-resolution layers.
+     clearTimeout(timer);worker.terminate();active=null;
      try{
       const mask=new Uint8Array(data.mask);validateMask(mask,data.width,data.height);
       if(data.width!==source.width||data.height!==source.height)throw Error("画像とマスクのサイズが一致しません");
       const result=buildLayers(source,mask,data.width,data.height);
-      clearTimeout(timer);worker.terminate();active=null;resolve(result);
-     }catch(e){fail(e);}
+      resolve(result);
+     }catch(e){reject(e);}
     }
    };
    try{

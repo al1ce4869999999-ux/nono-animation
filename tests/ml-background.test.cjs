@@ -65,3 +65,12 @@ test("oversized and extreme-aspect inputs never start model downloads",async()=>
  await assert.rejects(client.extract({width:2000,height:1000}),/1280px/);
  await assert.rejects(client.extract({width:1200,height:100}),/縦横比/);
 });
+test("model heap is released before layer allocation, including allocation failure",async()=>{
+ const w=worker(),client=ML.createClient({workerFactory:()=>w}),previous=globalThis.document;
+ globalThis.document={createElement(){assert.ok(w.terminated);throw Error("canvas allocation failed");}};
+ try{
+  const result=client.extract(fakeSource());
+  w.onmessage({data:{type:"result",width:100,height:100,mask:goodMask().buffer}});
+  await assert.rejects(result,/canvas allocation failed/);
+ }finally{if(previous===undefined)delete globalThis.document;else globalThis.document=previous;}
+});
