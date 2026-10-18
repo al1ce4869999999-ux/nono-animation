@@ -30,8 +30,8 @@ footer{text-align:center;padding:5px 0;font-size:12px;color:#9f897d}
 <div class="sectiontitle">① イラストを読み込む</div>
 <canvas id="canvas" width="500" height="500" aria-label="アニメーション編集キャンバス"></canvas>
 <p id="message" role="status" aria-live="polite">画像を選んでね</p>
-<div class="row"><label class="upload">📷 画像を選ぶ（全自動）<input type="file" id="file" accept="image/*"></label><button id="autoSelect">✨ タップで自動切り抜き</button><button class="secondary" id="select">✏️ 手動で囲む</button></div>
-<p class="hint">画像は自動解析します。ただし誤検出による画像破損を防ぐため、自動切り抜き・自動再生は一時停止しています。</p><div class="row"><button class="secondary" id="addPart">＋ パーツを追加</button><button class="secondary" id="undoPart">↶ 最後を削除</button></div><p id="partCount" class="hint">パーツ：0個</p><div class="row"><button id="inspectImage" class="secondary">🔍 イラストの特徴を解析</button></div><p id="imageInfo" class="hint">明るさ・コントラスト・輪郭の複雑さを端末内で計算します。</p>
+<div class="row"><label class="upload">📷 画像を選ぶ（全自動）<input type="file" id="file" accept="image/*"></label><button id="extractBody">🫥 全身を自動切り抜き</button><button class="secondary" id="autoSelect">✨ タップで自動切り抜き</button><button class="secondary" id="select">✏️ 手動で囲む</button></div>
+<p class="hint">全身切り抜きを試せます。複雑な背景は自動で中止し、元画像を守ります。成功しても切り抜きに不自然さが残る場合があります。</p><div class="row"><button class="secondary" id="addPart">＋ パーツを追加</button><button class="secondary" id="undoPart">↶ 最後を削除</button></div><p id="partCount" class="hint">パーツ：0個</p><div class="row"><button id="inspectImage" class="secondary">🔍 イラストの特徴を解析</button></div><p id="imageInfo" class="hint">明るさ・コントラスト・輪郭の複雑さを端末内で計算します。</p>
 </section>
 <section class="card"><div class="sectiontitle">② シーンから動きを選ぶ</div><textarea id="scene" rows="3" maxlength="3000" placeholder="例：ののは嬉しくてしっぽをぱたぱた振る。耳もぴくっと動いた。" style="width:100%;resize:vertical;border:1px solid #dfc9bd;border-radius:14px;padding:12px;font:inherit;background:#fffaf7;color:#51443d"></textarea><div class="row"><button id="applyScene" class="secondary">✨ 文章から動きを提案</button></div><p id="sceneInfo" class="hint">無料のキーワード判定です。AI動画生成ではありません。</p></section><section class="card">
 <div class="sectiontitle">③ 動きを決める</div>
@@ -49,6 +49,7 @@ footer{text-align:center;padding:5px 0;font-size:12px;color:#9f897d}
 </main>
 
 <script src="./analyzer.js?v=20261018-fullauto1"></script>
+<script src="./body-extractor.js?v=20261018-body1"></script>
 <script>
 const canvas = document.getElementById("canvas");
 const ctx = canvas.getContext("2d");
@@ -69,6 +70,57 @@ let activePointer = null;
 let autoSelecting=false;
 const $ = id => document.getElementById(id);
 let recording = false;
+let bodyMode=false,bodyLayer=null,bodyBackground=null,bodyPivot=null;
+function resetBodyMode(){bodyMode=false;bodyLayer=null;bodyBackground=null;bodyPivot=null;}
+function extractWholeBody(){
+ if(!loaded)return report("先に画像を読み込んでください",true);
+ stopAnimation();resetBodyMode();resetSelection();parts.length=0;cachedBackground=null;countParts();
+ try{
+  if(typeof window.NonoBody?.extract!=="function")throw Error("全身解析プログラムが未読込です。更新してください");
+  const ratio=Math.min(1,256/Math.max(image.naturalWidth,image.naturalHeight));
+  const small=document.createElement("canvas");small.width=Math.max(1,Math.round(image.naturalWidth*ratio));small.height=Math.max(1,Math.round(image.naturalHeight*ratio));
+  const sc=small.getContext("2d",{willReadFrequently:true});sc.drawImage(image,0,0,small.width,small.height);
+  const imageData=sc.getImageData(0,0,small.width,small.height);
+  const result=NonoBody.extract(imageData);
+  const maskCanvas=document.createElement("canvas");maskCanvas.width=small.width;maskCanvas.height=small.height;
+  const mc=maskCanvas.getContext("2d");const maskData=mc.createImageData(small.width,small.height);
+  for(let n=0;n<result.mask.length;n++){const k=n*4;maskData.data[k]=maskData.data[k+1]=maskData.data[k+2]=255;maskData.data[k+3]=result.mask[n];}
+  mc.putImageData(maskData,0,0);
+  const fullMask=document.createElement("canvas");fullMask.width=canvas.width;fullMask.height=canvas.height;
+  fullMask.getContext("2d").drawImage(maskCanvas,0,0,canvas.width,canvas.height);
+  bodyLayer=document.createElement("canvas");bodyLayer.width=canvas.width;bodyLayer.height=canvas.height;
+  const bc=bodyLayer.getContext("2d");bc.drawImage(image,0,0);
+  bc.globalCompositeOperation="destination-in";bc.drawImage(fullMask,0,0);bc.globalCompositeOperation="source-over";
+  // Background must NOT retain the original character; reconstruct with low-resolution
+  // edge-to-edge interpolation, preserving the original outside the silhouette.
+  const repair=document.createElement("canvas");repair.width=small.width;repair.height=small.height;
+  const rc=repair.getContext("2d");const patch=rc.createImageData(small.width,small.height);
+  const src=imageData.data,w=small.width,h=small.height,ms=result.mask;
+  for(let y=0;y<h;y++){
+   const left=new Int32Array(w),right=new Int32Array(w);let last=-1;
+   for(let x=0;x<w;x++){if(!ms[y*w+x])last=x;left[x]=last;}
+   last=-1;for(let x=w-1;x>=0;x--){if(!ms[y*w+x])last=x;right[x]=last;}
+   for(let x=0;x<w;x++){const n=y*w+x,k=n*4;if(!ms[n]){patch.data.set(src.subarray(k,k+4),k);continue;}
+    const l=left[x],r=right[x],a=l>=0?l:r,b=r>=0?r:l;
+    if(a<0){patch.data.set([245,237,229,255],k);continue;}
+    const t=a===b?0:(x-a)/(b-a);
+    for(let c=0;c<3;c++)patch.data[k+c]=src[(y*w+a)*4+c]*(1-t)+src[(y*w+b)*4+c]*t;
+    patch.data[k+3]=255;
+   }
+  }
+  rc.putImageData(patch,0,0);
+  bodyBackground=document.createElement("canvas");bodyBackground.width=canvas.width;bodyBackground.height=canvas.height;
+  const bg=bodyBackground.getContext("2d");bg.drawImage(repair,0,0,canvas.width,canvas.height);
+  // Overlay original outside mask to avoid changing the original background texture.
+  const clean=document.createElement("canvas");clean.width=canvas.width;clean.height=canvas.height;
+  const cc=clean.getContext("2d");cc.drawImage(image,0,0);cc.globalCompositeOperation="destination-out";cc.drawImage(fullMask,0,0);cc.globalCompositeOperation="source-over";
+  bg.drawImage(clean,0,0);
+  bodyPivot={x:(result.bounds.x+result.bounds.w/2)*canvas.width/small.width,y:(result.bounds.y+result.bounds.h*.55)*canvas.height/small.height};
+  bodyMode=true;draw();report("全身切り抜きの試作が完了しました。再生して確認してください（背景補完は簡易処理）");
+ }catch(err){resetBodyMode();draw();report("全身切り抜きを見送りました："+err.message,true);}
+}
+$("extractBody").addEventListener("click",extractWholeBody);
+
 const parts=[];
 let sourceDataUrl=null;
 $("inspectImage").addEventListener("click",()=>{
@@ -156,7 +208,7 @@ document.getElementById("file").onchange = e => {
   const file = e.target.files[0];
   if (!file) return;
   stopAnimation();
-  resetSelection();parts.length=0;sourceDataUrl=null;cachedBackground=null;countParts();
+  resetBodyMode();resetSelection();parts.length=0;sourceDataUrl=null;cachedBackground=null;countParts();
   loaded = false;
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   report("画像を読み込んでいます…");
@@ -195,7 +247,7 @@ $("autoSelect").onclick=()=>{if(!loaded)return report("先に画像を読み込�
 document.getElementById("select").onclick = () => {
   if (!loaded) return report("先に画像を読み込んでください。", true);
   stopAnimation();
-  resetSelection();
+  resetBodyMode();resetSelection();
   selecting = true;
   draw();
   report("しっぽの輪郭を指でなぞり、指を離してね");
@@ -338,6 +390,14 @@ if (window.PointerEvent) {
 function draw(time = 0) {
   if (!loaded) return;
   ctx.clearRect(0, 0, canvas.width, canvas.height);
+  if(bodyMode&&bodyLayer&&bodyBackground&&bodyPivot){
+   ctx.drawImage(bodyBackground,0,0);
+   const t=playing&&startTime!==null?(time-startTime):0;
+   const base=Math.min(canvas.width,canvas.height);
+   const dx=Math.sin(t/510)*base*.004,dy=Math.sin(t/390)*base*.007,angle=Math.sin(t/550)*.025;
+   ctx.save();ctx.translate(bodyPivot.x+dx,bodyPivot.y+dy);ctx.rotate(angle);ctx.drawImage(bodyLayer,-bodyPivot.x,-bodyPivot.y);ctx.restore();
+   return;
+  }
   paintBackground();
   for(const part of [...parts,...(tail&&pivot?[{...tail,pivot}]:[])]) {
     const angle = playing && startTime !== null ? NonoAnalyzer.sample({time:time-startTime,speed:motion.speed,amplitude:motion.amplitude,mode:motion.preset==="happy"?"bounce":motion.preset==="nervous"?"tremble":"sway",phase:parts.indexOf(part)*0.45}) : 0;
@@ -389,8 +449,8 @@ function animate(time) {
 
 document.getElementById("play").onclick = () => {
   if (!loaded) return report("先に画像を読み込んでください。", true);
-  if (drawing || selecting || (!tail&&!parts.length)) return report("しっぽの選択が完了していません。輪郭を囲んで指を離してください。", true);
-  if (!pivot&&!parts.length) return report("付け根が未指定です。画像のしっぽの付け根をタップしてください。", true);
+  if (!bodyMode && (drawing || selecting || (!tail&&!parts.length))) return report("しっぽの選択が完了していません。輪郭を囲んで指を離してください。", true);
+  if (!bodyMode&&!pivot&&!parts.length) return report("付け根が未指定です。画像のしっぽの付け根をタップしてください。", true);
   if (playing) return report("アニメーションは再生中です。");
   if (typeof requestAnimationFrame !== "function") return report("このブラウザーはアニメーションに対応していません。Safari を更新してください。", true);
   stopAnimation();
@@ -415,7 +475,7 @@ $("saveImage").addEventListener("click",()=>{
 });
 $("saveVideo").addEventListener("click",async()=>{
   if(recording)return;
-  if(!loaded||(!parts.length&&(!tail||!pivot)))return report("先に画像としっぽ、付け根を指定してください。",true);
+  if(!loaded||(!bodyMode&&!parts.length&&(!tail||!pivot)))return report("先に画像としっぽ、付け根を指定してください。",true);
   if(typeof canvas.captureStream!=="function"||typeof MediaRecorder==="undefined")return report("このSafariでは動画録画に対応していません。画像保存をご利用ください。",true);
   const types=["video/mp4;codecs=avc1.42E01E","video/mp4","video/webm;codecs=vp9","video/webm"];
   const type=types.find(t=>MediaRecorder.isTypeSupported(t));
