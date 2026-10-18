@@ -31,7 +31,7 @@ footer{text-align:center;padding:5px 0;font-size:12px;color:#9f897d}
 <canvas id="canvas" width="500" height="500" aria-label="アニメーション編集キャンバス"></canvas>
 <p id="message" role="status" aria-live="polite">画像を選んでね</p>
 <div class="row"><label class="upload">📷 画像を選ぶ<input type="file" id="file" accept="image/*"></label><button class="secondary" id="select">✏️ しっぽを囲む</button></div>
-<p class="hint">パーツを囲み、付け根をタップ。追加を繰り返すと、耳・しっぽ・手など複数の場所を動かせます。</p><div class="row"><button class="secondary" id="addPart">＋ パーツを追加</button><button class="secondary" id="undoPart">↶ 最後を削除</button></div><p id="partCount" class="hint">パーツ：0個</p>
+<p class="hint">パーツを囲み、付け根をタップ。追加を繰り返すと、耳・しっぽ・手など複数の場所を動かせます。</p><div class="row"><button class="secondary" id="addPart">＋ パーツを追加</button><button class="secondary" id="undoPart">↶ 最後を削除</button></div><p id="partCount" class="hint">パーツ：0個</p><div class="row"><button id="inspectImage" class="secondary">🔍 イラストの特徴を解析</button></div><p id="imageInfo" class="hint">明るさ・コントラスト・輪郭の複雑さを端末内で計算します。</p>
 </section>
 <section class="card"><div class="sectiontitle">② シーンから動きを選ぶ</div><textarea id="scene" rows="3" maxlength="3000" placeholder="例：ののは嬉しくてしっぽをぱたぱた振る。耳もぴくっと動いた。" style="width:100%;resize:vertical;border:1px solid #dfc9bd;border-radius:14px;padding:12px;font:inherit;background:#fffaf7;color:#51443d"></textarea><div class="row"><button id="applyScene" class="secondary">✨ 文章から動きを提案</button></div><p id="sceneInfo" class="hint">無料のキーワード判定です。AI動画生成ではありません。</p></section><section class="card">
 <div class="sectiontitle">③ 動きを決める</div>
@@ -48,6 +48,7 @@ footer{text-align:center;padding:5px 0;font-size:12px;color:#9f897d}
 </section><footer>のののアニメ工房 · 画像は端末内で処理されます</footer>
 </main>
 
+<script src="./analyzer.js"></script>
 <script>
 const canvas = document.getElementById("canvas");
 const ctx = canvas.getContext("2d");
@@ -69,13 +70,23 @@ const $ = id => document.getElementById(id);
 let recording = false;
 const parts=[];
 let sourceDataUrl=null;
+$("inspectImage").addEventListener("click",()=>{
+ if(!loaded)return report("画像を読み込んでください",true);
+ try{const tmp=document.createElement("canvas"),ratio=Math.min(1,256/Math.max(image.naturalWidth,image.naturalHeight));tmp.width=Math.max(1,Math.round(image.naturalWidth*ratio));tmp.height=Math.max(1,Math.round(image.naturalHeight*ratio));const c=tmp.getContext("2d",{willReadFrequently:true});c.drawImage(image,0,0,tmp.width,tmp.height);const stats=NonoAnalyzer.imageStats(c.getImageData(0,0,tmp.width,tmp.height));$("imageInfo").textContent="明るさ "+stats.brightness+"/255 ・コントラスト "+stats.contrast+" ・輪郭変化 "+stats.edgeDensity+"。"+stats.recommendation;report("画像の統計解析が完了しました");}catch(e){report("画像解析に失敗しました："+e.message,true);}
+});
 function countParts(){ $("partCount").textContent="パーツ："+(parts.length+(tail&&pivot?1:0))+"個"; }
 function archivePart(){if(tail&&pivot){parts.push({layer:tail.layer,x:tail.x,y:tail.y,w:tail.w,h:tail.h,pivot:{...pivot},mask:tail.mask});tail=null;pivot=null;cachedBackground=null;countParts();}}
 let cachedBackground=null,cachedBackgroundKey="";
 function paintBackground(){const key=[canvas.width,canvas.height,parts.length,tail&&pivot?tail.x+"-"+tail.y+"-"+tail.w+"-"+tail.h:"none"].join(":");if(cachedBackground&&cachedBackgroundKey===key){ctx.drawImage(cachedBackground,0,0);return;}ctx.drawImage(image,0,0);const all=[...parts,...(tail&&pivot?[{...tail,pivot}]:[])];for(const p of all){if(!p.mask)continue;const edge=Math.max(3,Math.floor(Math.min(canvas.width,canvas.height)/90));const bx=Math.max(0,Math.min(canvas.width-1,Math.floor(p.x+p.w/2)));const by=Math.max(0,Math.min(canvas.height-1,Math.floor(p.y+p.h+edge)));const sample=document.createElement("canvas");sample.width=1;sample.height=1;const sc=sample.getContext("2d");sc.drawImage(image,bx,by,1,1,0,0,1,1);const pixel=sc.getImageData(0,0,1,1).data;ctx.save();ctx.beginPath();p.mask.forEach((v,i)=>i?ctx.lineTo(v.x,v.y):ctx.moveTo(v.x,v.y));ctx.closePath();ctx.clip();ctx.fillStyle="rgb("+pixel[0]+","+pixel[1]+","+pixel[2]+")";ctx.fillRect(p.x-2,p.y-2,p.w+4,p.h+4);ctx.restore();}cachedBackground=document.createElement("canvas");cachedBackground.width=canvas.width;cachedBackground.height=canvas.height;cachedBackground.getContext("2d").drawImage(canvas,0,0);cachedBackgroundKey=key;}
 $("addPart").addEventListener("click",()=>{if(!loaded)return report("先に画像を読み込んでください。",true);archivePart();$("select").click();});
 $("undoPart").addEventListener("click",()=>{stopAnimation();if(tail&&pivot){tail=null;pivot=null;}else parts.pop();cachedBackground=null;countParts();draw();report("最後のパーツを削除しました");});
-$("applyScene").addEventListener("click",()=>{const t=$("scene").value;if(!t.trim())return report("シーンの文章を入力してください",true);let preset="wag";if(/怖|不安|びく|おずおず|警戒|そっと|怯/.test(t))preset="nervous";else if(/眠|寝|ゆっくり|ふわ|静か|のんびり/.test(t))preset="slow";else if(/嬉|喜|楽しい|元気|ぱたぱた|走|はしゃ/.test(t))preset="happy";$("preset").value=preset;$("preset").dispatchEvent(new Event("change"));$("sceneInfo").textContent="提案："+$("preset").selectedOptions[0].text+"。文章全体の動作を自動生成するものではありません。";report("文章から動きの設定を選びました");});
+$("applyScene").addEventListener("click",()=>{
+ const t=$("scene").value;if(!t.trim())return report("シーンの文章を入力してください",true);
+ const plan=NonoAnalyzer.analyze(t);$("preset").value=plan.preset;
+ $("preset").dispatchEvent(new Event("change"));
+ $("sceneInfo").textContent="解析結果："+plan.scenes.map((s,i)=>(i+1)+"."+s.target+"／"+s.preset+"（根拠："+(s.evidence.join("・")||"なし")+"）").join(" → ")+"。手動調整できます。";
+ report("文章を"+plan.scenes.length+"場面に分けて解析しました");
+});
 const motion = {speed:1, amplitude:15, preset:"wag"};
 const presets = {wag:[1,15],happy:[2,25],slow:[0.6,9],nervous:[2.7,6]};
 function updateMotionUI(){motion.speed=Number($("speed").value);motion.amplitude=Number($("amplitude").value);motion.preset=$("preset").value;$("speedValue").textContent=motion.speed.toFixed(1)+"倍";$("amplitudeValue").textContent=motion.amplitude+"°";}
@@ -271,13 +282,13 @@ function draw(time = 0) {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   paintBackground();
   for(const part of [...parts,...(tail&&pivot?[{...tail,pivot}]:[])]) {
-    const angle = playing && startTime !== null ? Math.sin((time-startTime)*motion.speed/240)*(motion.amplitude*Math.PI/180) : 0;
+    const angle = playing && startTime !== null ? NonoAnalyzer.sample({time:time-startTime,speed:motion.speed,amplitude:motion.amplitude,mode:motion.preset==="happy"?"bounce":motion.preset==="nervous"?"tremble":"sway",phase:parts.indexOf(part)*0.45}) : 0;
     ctx.save();ctx.translate(part.pivot.x,part.pivot.y);ctx.rotate(angle);
     ctx.drawImage(part.layer,part.x-part.pivot.x,part.y-part.pivot.y);ctx.restore();
   }
   if (false && tail && pivot) {
     const angle = playing && startTime !== null
-      ? Math.sin((time - startTime) * motion.speed / 240) * (motion.amplitude * Math.PI / 180) : 0;
+      ? NonoAnalyzer.sample({time:time-startTime,speed:motion.speed,amplitude:motion.amplitude}) : 0;
     ctx.save();
     ctx.translate(pivot.x, pivot.y);
     ctx.rotate(angle);
