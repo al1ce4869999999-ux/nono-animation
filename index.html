@@ -3,59 +3,49 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#f9f2ea">
 <title>のののアニメ工房</title>
 <style>
-* { box-sizing: border-box; }
-body {
-  margin: 0;
-  background: #faf5f0;
-  color: #51443d;
-  font-family: -apple-system, sans-serif;
-}
-main {
-  max-width: 600px;
-  margin: auto;
-  padding: 24px 14px;
-  text-align: center;
-}
-h1 { font-size: 24px; }
-p { color: #8b7970; }
-canvas {
-  display: block;
-  width: 100%;
-  background: white;
-  border-radius: 18px;
-  touch-action: none;
-  margin: 20px 0;
-}
-button, label {
-  display: inline-block;
-  margin: 5px;
-  padding: 12px 18px;
-  background: #b78f80;
-  color: white;
-  border: 0;
-  border-radius: 24px;
-  font-size: 15px;
-}
-input { display: none; }
+*{box-sizing:border-box}body{margin:0;background:linear-gradient(160deg,#fffaf6,#f1e5dd);color:#51443d;font-family:-apple-system,BlinkMacSystemFont,"Hiragino Kaku Gothic ProN",sans-serif;min-height:100vh}
+main{max-width:680px;margin:auto;padding:26px 16px 48px}header{text-align:center;padding:8px 0 12px}h1{font-size:clamp(24px,6vw,34px);letter-spacing:.02em;margin:4px 0}p{color:#8b7970}header p{margin:8px 0 0;font-size:14px}
+.card{background:#fff;border:1px solid #eadbd2;border-radius:24px;padding:17px;box-shadow:0 10px 30px #70513d12;margin:16px 0}
+.sectiontitle{font-size:15px;font-weight:750;margin:0 0 12px;display:flex;gap:7px;align-items:center}
+canvas{display:block;width:100%;height:auto;background:linear-gradient(45deg,#faf5f1 25%,#fff 25%,#fff 75%,#faf5f1 75%);background-size:24px 24px;border-radius:17px;touch-action:none;max-height:55vh;object-fit:contain}
+#message{min-height:40px;background:#faf0ea;border-radius:12px;padding:11px 13px;font-size:13px;margin:12px 0;color:#71594d}
+.row{display:flex;flex-wrap:wrap;gap:8px}.row>*{flex:1}
+button,.upload{display:inline-flex;align-items:center;justify-content:center;min-height:45px;padding:11px 14px;background:#ad7b69;color:white;border:0;border-radius:14px;font-size:14px;font-weight:650;text-align:center;cursor:pointer;margin:0}
+button.secondary{background:#f4e8e0;color:#705549}button:disabled{opacity:.45;cursor:not-allowed}
+input[type=file]{display:none}input[type=range]{width:100%;accent-color:#ad7b69}
+select{font:inherit;width:100%;padding:12px;border:1px solid #dfc9bd;background:#fffaf7;color:#5a463e;border-radius:12px}
+.setting{padding:9px 0}.setting label{display:flex;justify-content:space-between;align-items:center;font-size:14px;font-weight:600;margin-bottom:5px}.setting output{color:#9a6a56;font-variant-numeric:tabular-nums}
+small,.hint{color:#998278;font-size:12px;line-height:1.6}.hint{margin:10px 0 0}.step{display:inline-flex;background:#f6e8df;color:#a47866;padding:5px 10px;border-radius:30px;font-size:12px;font-weight:750;margin-bottom:9px}
+footer{text-align:center;padding:5px 0;font-size:12px;color:#9f897d}
 </style>
 </head>
 <body>
 <main>
-  <h1>🐾 のののアニメ工房</h1>
-  <p id="message" role="status" aria-live="polite">画像を選んでね</p>
-
-  <canvas id="canvas" width="500" height="500"></canvas>
-
-  <label>
-    📷 画像を選ぶ
-    <input type="file" id="file" accept="image/*">
-  </label>
-  <button id="select">しっぽを囲む</button>
-  <button id="play">▶ ふりふり</button>
-  <button id="stop">■ 停止</button>
+<header><div class="step">Nono Motion Studio · β</div><h1>🐾 のののアニメ工房</h1><p>一枚のイラストに、ちいさな動きを。</p></header>
+<section class="card">
+<div class="sectiontitle">① イラストを読み込む</div>
+<canvas id="canvas" width="500" height="500" aria-label="アニメーション編集キャンバス"></canvas>
+<p id="message" role="status" aria-live="polite">画像を選んでね</p>
+<div class="row"><label class="upload">📷 画像を選ぶ<input type="file" id="file" accept="image/*"></label><button class="secondary" id="select">✏️ しっぽを囲む</button></div>
+<p class="hint">しっぽの輪郭を指でなぞって、付け根をタップ。画像内のパーツが動きます。</p>
+</section>
+<section class="card">
+<div class="sectiontitle">② 動きを決める</div>
+<div class="setting"><label for="preset">動きの種類</label><select id="preset"><option value="wag">しっぽをふりふり</option><option value="happy">うれしい！ぱたぱた</option><option value="slow">ゆったり、ふわふわ</option><option value="nervous">おずおず、ちょこちょこ</option></select></div>
+<div class="setting"><label for="speed">速さ <output id="speedValue">1.0倍</output></label><input id="speed" type="range" min="0.3" max="3" step="0.1" value="1"></div>
+<div class="setting"><label for="amplitude">揺れ幅 <output id="amplitudeValue">15°</output></label><input id="amplitude" type="range" min="2" max="45" step="1" value="15"></div>
+<div class="row"><button id="play">▶ 再生する</button><button class="secondary" id="stop">■ 停止</button></div>
+</section>
+<section class="card">
+<div class="sectiontitle">③ 保存する</div>
+<div class="setting"><label for="duration">動画の長さ <output id="durationValue">3秒</output></label><input id="duration" type="range" min="1" max="10" step="1" value="3"></div>
+<div class="row"><button class="secondary" id="saveImage">🖼️ 画像を保存</button><button id="saveVideo">🎬 動画を書き出す</button></div>
+<p class="hint">画像はPNG。動画はブラウザが録画に対応する場合に保存できます。iPhone Safariでは機種・OSによって動画書き出しが使えない場合があります。</p>
+</section><footer>のののアニメ工房 · 画像は端末内で処理されます</footer>
 </main>
 
 <script>
@@ -75,6 +65,14 @@ let playing = false;
 let startTime = null;
 let frameId = null;
 let activePointer = null;
+const $ = id => document.getElementById(id);
+let recording = false;
+const motion = {speed:1, amplitude:15, preset:"wag"};
+const presets = {wag:[1,15],happy:[2,25],slow:[0.6,9],nervous:[2.7,6]};
+function updateMotionUI(){motion.speed=Number($("speed").value);motion.amplitude=Number($("amplitude").value);motion.preset=$("preset").value;$("speedValue").textContent=motion.speed.toFixed(1)+"倍";$("amplitudeValue").textContent=motion.amplitude+"°";}
+$("preset").addEventListener("change",()=>{const [speed,angle]=presets[$("preset").value];$("speed").value=speed;$("amplitude").value=angle;updateMotionUI();});
+["speed","amplitude"].forEach(id=>$(id).addEventListener("input",updateMotionUI));
+$("duration").addEventListener("input",()=>{$("durationValue").textContent=$("duration").value+"秒";});
 
 function report(text, error = false) {
   message.textContent = text;
@@ -264,7 +262,7 @@ function draw(time = 0) {
   ctx.drawImage(image, 0, 0);
   if (tail && pivot) {
     const angle = playing && startTime !== null
-      ? Math.sin((time - startTime) / 240) * 0.25 : 0;
+      ? Math.sin((time - startTime) * motion.speed / 240) * (motion.amplitude * Math.PI / 180) : 0;
     ctx.save();
     ctx.translate(pivot.x, pivot.y);
     ctx.rotate(angle);
@@ -281,7 +279,7 @@ function draw(time = 0) {
     });
     ctx.stroke();
   }
-  if (pivot && !playing) {
+  if (pivot && !playing && !recording) {
     ctx.fillStyle = "#ff7890";
     ctx.beginPath();
     ctx.arc(pivot.x, pivot.y, Math.max(3, canvas.width / 100), 0, Math.PI * 2);
@@ -325,6 +323,40 @@ document.getElementById("stop").onclick = () => {
   report("停止しました。再生するには「▶ ふりふり」を押してください。");
 };
 
+$("saveImage").addEventListener("click",()=>{
+  if(!loaded)return report("先に画像を読み込んでください。",true);
+  const wasPlaying=playing;stopAnimation();draw();
+  const link=document.createElement("a");link.href=canvas.toDataURL("image/png");link.download="nono-frame.png";link.click();
+  if(wasPlaying)$("play").click();else report("画像を書き出しました");
+});
+$("saveVideo").addEventListener("click",async()=>{
+  if(recording)return;
+  if(!loaded||!tail||!pivot)return report("先に画像としっぽ、付け根を指定してください。",true);
+  if(typeof canvas.captureStream!=="function"||typeof MediaRecorder==="undefined")return report("このSafariでは動画録画に対応していません。画像保存をご利用ください。",true);
+  const types=["video/mp4;codecs=avc1.42E01E","video/mp4","video/webm;codecs=vp9","video/webm"];
+  const type=types.find(t=>MediaRecorder.isTypeSupported(t));
+  if(!type)return report("対応する動画形式が見つかりません。Safariのバージョンを確認してください。",true);
+  let stream;
+  try{
+    stopAnimation();recording=true;$("saveVideo").disabled=true;
+    stream=canvas.captureStream(30);
+    const chunks=[];
+    const recorder=new MediaRecorder(stream,{mimeType:type,videoBitsPerSecond:2500000});
+    recorder.ondataavailable=e=>{if(e.data.size)chunks.push(e.data);};
+    recorder.onerror=()=>report("動画の録画に失敗しました。",true);
+    const result=new Promise((resolve,reject)=>{recorder.onstop=resolve;recorder.onerror=reject;});
+    recorder.start();playing=true;startTime=null;frameId=requestAnimationFrame(animate);
+    report("動画を書き出しています…");
+    await new Promise(resolve=>setTimeout(resolve,Number($("duration").value)*1000));
+    recorder.stop();await result;
+    const blob=new Blob(chunks,{type});
+    if(!blob.size)throw new Error("動画データが空です");
+    const url=URL.createObjectURL(blob),link=document.createElement("a");
+    link.href=url;link.download="nono-animation."+(type.includes("mp4")?"mp4":"webm");link.click();
+    setTimeout(()=>URL.revokeObjectURL(url),60000);report("動画を保存しました。");
+  }catch(error){report("動画の書き出しに失敗しました："+error.message,true);}
+  finally{recording=false;$("saveVideo").disabled=false;stopAnimation();draw();if(stream)stream.getTracks().forEach(t=>t.stop());}
+});
 </script>
 </body>
 </html>
