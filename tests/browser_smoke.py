@@ -22,9 +22,13 @@ threading.Thread(target=server.serve_forever, daemon=True).start()
 try:
     with sync_playwright() as p:
         name = os.environ.get('BROWSER', 'chromium')
-        browser = getattr(p, name).launch(**({'executable_path': '/usr/bin/chromium', 'args': ['--no-sandbox']} if name == 'chromium' else {}))
+        browser = getattr(p, name).launch(**({'executable_path': os.environ['CHROMIUM_PATH'], 'args': ['--no-sandbox']} if name == 'chromium' and os.environ.get('CHROMIUM_PATH') else {}))
         for fallback in [False, True]:
             context = browser.new_context(viewport={'width': 390, 'height': 844}, device_scale_factor=3, is_mobile=True, has_touch=True)
+            context.add_init_script("""window.Worker = class {
+              postMessage(){setTimeout(()=>this.onmessage?.({data:{type:'error',message:'model disabled in manual regression test'}}),0)}
+              terminate(){}
+            }""")
             if fallback:
                 context.add_init_script('window.PointerEvent = undefined')
             page = context.new_page()
@@ -36,7 +40,7 @@ try:
             page.locator('#play').tap()
             message_contains('先に画像')
             page.locator('#file').set_input_files({'name': 'test.png', 'mimeType': 'image/png', 'buffer': png})
-            page.wait_for_function('loaded && canvas.width === 100')
+            page.wait_for_function('loaded && !mlBusy && canvas.width === 100')
             page.locator('#play').tap()
             message_contains('選択が完了していません')
             page.locator('#select').tap()
@@ -73,6 +77,7 @@ try:
             page.locator('#play').tap()
             message_contains('付け根が未指定')
             # Use a real touchscreen tap for the pivot and buttons.
+            page.locator('#canvas').scroll_into_view_if_needed()
             box = page.locator('#canvas').bounding_box()
             page.touchscreen.tap(box['x'] + box['width'] / 2, box['y'] + box['height'] * .8)
             assert page.evaluate('Math.abs(pivot.x-50)<1 && Math.abs(pivot.y-80)<1')

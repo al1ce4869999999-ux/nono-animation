@@ -1,0 +1,30 @@
+name: Browser and mask regression tests
+on:
+  push:
+    branches: [main, "codex/**"]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: node --test tests/ml-background.test.cjs
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install playwright==1.58.0
+      - run: python -m playwright install --with-deps chromium webkit
+      - name: Chromium canvas and exports
+        run: python tests/ml_browser.py
+      - name: WebKit canvas and exports (not iPhone hardware)
+        run: BROWSER=webkit python tests/ml_browser.py
+      - name: Manual pointer and touch fallback regression
+        run: python tests/browser_smoke.py
+      - name: Actual model WASM pipeline smoke (not a Nono quality assessment)
+        run: python tests/real_model_browser.py

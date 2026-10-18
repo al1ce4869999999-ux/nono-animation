@@ -7,7 +7,7 @@
 <meta name="theme-color" content="#f9f2ea">
 <title>のののアニメ工房</title>
 <style>
-*{box-sizing:border-box}body{margin:0;background:linear-gradient(160deg,#fffaf6,#f1e5dd);color:#51443d;font-family:-apple-system,BlinkMacSystemFont,"Hiragino Kaku Gothic ProN",sans-serif;min-height:100vh}
+[hidden]{display:none!important}*{box-sizing:border-box}body{margin:0;background:linear-gradient(160deg,#fffaf6,#f1e5dd);color:#51443d;font-family:-apple-system,BlinkMacSystemFont,"Hiragino Kaku Gothic ProN",sans-serif;min-height:100vh}
 main{max-width:680px;margin:auto;padding:26px 16px 48px}header{text-align:center;padding:8px 0 12px}h1{font-size:clamp(24px,6vw,34px);letter-spacing:.02em;margin:4px 0}p{color:#8b7970}header p{margin:8px 0 0;font-size:14px}
 .card{background:#fff;border:1px solid #eadbd2;border-radius:24px;padding:17px;box-shadow:0 10px 30px #70513d12;margin:16px 0}
 .sectiontitle{font-size:15px;font-weight:750;margin:0 0 12px;display:flex;gap:7px;align-items:center}
@@ -30,8 +30,21 @@ footer{text-align:center;padding:5px 0;font-size:12px;color:#9f897d}
 <div class="sectiontitle">① イラストを読み込む</div>
 <canvas id="canvas" width="500" height="500" aria-label="アニメーション編集キャンバス"></canvas>
 <p id="message" role="status" aria-live="polite">画像を選んでね</p>
-<div class="row"><label class="upload">📷 画像を選ぶ（全自動）<input type="file" id="file" accept="image/*"></label><button id="extractBody">🫥 全身を自動切り抜き</button><button class="secondary" id="autoSelect">✨ タップで自動切り抜き</button><button class="secondary" id="select">✏️ 手動で囲む</button></div>
-<p class="hint">全身切り抜きを試せます。複雑な背景は自動で中止し、元画像を守ります。成功しても切り抜きに不自然さが残る場合があります。</p><div class="row"><button class="secondary" id="addPart">＋ パーツを追加</button><button class="secondary" id="undoPart">↶ 最後を削除</button></div><p id="partCount" class="hint">パーツ：0個</p><div class="row"><button id="inspectImage" class="secondary">🔍 イラストの特徴を解析</button></div><p id="imageInfo" class="hint">明るさ・コントラスト・輪郭の複雑さを端末内で計算します。</p>
+<div class="row"><label class="upload">📷 画像を選ぶ（AI抽出）<input type="file" id="file" accept="image/*"></label><button id="extractBody">🫥 全身を自動切り抜き</button><button class="secondary" id="autoSelect">✨ AIで全身を抽出</button><button class="secondary" id="select">✏️ 手動で囲む</button></div>
+<p class="hint">初回は無料モデルをダウンロードします。推論は端末内です。人像向けモデルのため、イラストは抽出を誤ることがあります。輪郭と背景を確認するまで動かしません。編集画像は長辺1280pxまでです。</p>
+<progress id="mlProgress" max="100" hidden aria-label="モデル読み込み進捗"></progress>
+<button id="cancelML" class="secondary" hidden>処理を中止・元画像に戻す</button>
+<div id="mlReview" hidden>
+<p>抽出候補です。成功判定ではありません。髪・耳・手・しっぽの欠け、背景の残り、補完のにじみを確認してください。</p>
+<label>透過前景<canvas id="foregroundPreview" aria-label="透過前景の確認"></canvas></label>
+<label>補完した背景<canvas id="backgroundPreview" aria-label="キャラクターを除去した背景の確認"></canvas></label>
+<label>最大振幅で移動したときの合成プレビュー<canvas id="motionPreview" aria-label="背景の残像と輪郭を確認する最大変位プレビュー"></canvas></label><div class="row"><button id="previewPrevious" class="secondary" type="button">← 別方向を確認</button><button id="previewNext" class="secondary" type="button">別方向を確認 →</button></div><p class="hint" id="previewDirection">移動方向：右下（1 / 4）</p>
+<div class="row"><button id="downloadMask" class="secondary" type="button">前景マスクを保存</button><button id="downloadComparison" class="secondary" type="button">品質比較画像を保存</button></div>
+<label><input id="acceptEdges" type="checkbox">のの全体の輪郭と造形を確認した</label><br>
+<label><input id="acceptBackground" type="checkbox">補完背景と最大変位プレビューに残像や目立つ破綻がない</label>
+<div class="row"><button id="acceptML" disabled>確認した候補で動きを試す</button><button id="rejectML" class="secondary">元画像に戻す</button></div>
+<p class="hint">動かしたときだけ補完が見える場合があります。違和感があれば停止して元画像に戻してください。</p></div>
+<button id="restoreOriginal" class="secondary" hidden>元画像に戻す</button><div class="row"><button class="secondary" id="addPart">＋ パーツを追加</button><button class="secondary" id="undoPart">↶ 最後を削除</button></div><p id="partCount" class="hint">パーツ：0個</p><div class="row"><button id="inspectImage" class="secondary">🔍 イラストの特徴を解析</button></div><p id="imageInfo" class="hint">明るさ・コントラスト・輪郭の複雑さを端末内で計算します。</p>
 </section>
 <section class="card"><div class="sectiontitle">② シーンから動きを選ぶ</div><textarea id="scene" rows="3" maxlength="3000" placeholder="例：ののは嬉しくてしっぽをぱたぱた振る。耳もぴくっと動いた。" style="width:100%;resize:vertical;border:1px solid #dfc9bd;border-radius:14px;padding:12px;font:inherit;background:#fffaf7;color:#51443d"></textarea><div class="row"><button id="applyScene" class="secondary">✨ 文章から動きを提案</button></div><p id="sceneInfo" class="hint">無料のキーワード判定です。AI動画生成ではありません。</p></section><section class="card">
 <div class="sectiontitle">③ 動きを決める</div>
@@ -49,7 +62,7 @@ footer{text-align:center;padding:5px 0;font-size:12px;color:#9f897d}
 </main>
 
 <script src="./analyzer.js?v=20261018-fullauto1"></script>
-<script src="./body-extractor.js?v=20261018-body1"></script>
+<script src="./ml-background.js?v=20261018-ml1"></script>
 <script>
 const canvas = document.getElementById("canvas");
 const ctx = canvas.getContext("2d");
@@ -70,56 +83,100 @@ let activePointer = null;
 let autoSelecting=false;
 const $ = id => document.getElementById(id);
 let recording = false;
-let bodyMode=false,bodyLayer=null,bodyBackground=null,bodyPivot=null;
-function resetBodyMode(){bodyMode=false;bodyLayer=null;bodyBackground=null;bodyPivot=null;}
-function extractWholeBody(){
- if(!loaded)return report("先に画像を読み込んでください",true);
- stopAnimation();resetBodyMode();resetSelection();parts.length=0;cachedBackground=null;countParts();
- try{
-  if(typeof window.NonoBody?.extract!=="function")throw Error("全身解析プログラムが未読込です。更新してください");
-  const ratio=Math.min(1,256/Math.max(image.naturalWidth,image.naturalHeight));
-  const small=document.createElement("canvas");small.width=Math.max(1,Math.round(image.naturalWidth*ratio));small.height=Math.max(1,Math.round(image.naturalHeight*ratio));
-  const sc=small.getContext("2d",{willReadFrequently:true});sc.drawImage(image,0,0,small.width,small.height);
-  const imageData=sc.getImageData(0,0,small.width,small.height);
-  const result=NonoBody.extract(imageData);
-  const maskCanvas=document.createElement("canvas");maskCanvas.width=small.width;maskCanvas.height=small.height;
-  const mc=maskCanvas.getContext("2d");const maskData=mc.createImageData(small.width,small.height);
-  for(let n=0;n<result.mask.length;n++){const k=n*4;maskData.data[k]=maskData.data[k+1]=maskData.data[k+2]=255;maskData.data[k+3]=result.mask[n];}
-  mc.putImageData(maskData,0,0);
-  const fullMask=document.createElement("canvas");fullMask.width=canvas.width;fullMask.height=canvas.height;
-  fullMask.getContext("2d").drawImage(maskCanvas,0,0,canvas.width,canvas.height);
-  bodyLayer=document.createElement("canvas");bodyLayer.width=canvas.width;bodyLayer.height=canvas.height;
-  const bc=bodyLayer.getContext("2d");bc.drawImage(image,0,0);
-  bc.globalCompositeOperation="destination-in";bc.drawImage(fullMask,0,0);bc.globalCompositeOperation="source-over";
-  // Background must NOT retain the original character; reconstruct with low-resolution
-  // edge-to-edge interpolation, preserving the original outside the silhouette.
-  const repair=document.createElement("canvas");repair.width=small.width;repair.height=small.height;
-  const rc=repair.getContext("2d");const patch=rc.createImageData(small.width,small.height);
-  const src=imageData.data,w=small.width,h=small.height,ms=result.mask;
-  for(let y=0;y<h;y++){
-   const left=new Int32Array(w),right=new Int32Array(w);let last=-1;
-   for(let x=0;x<w;x++){if(!ms[y*w+x])last=x;left[x]=last;}
-   last=-1;for(let x=w-1;x>=0;x--){if(!ms[y*w+x])last=x;right[x]=last;}
-   for(let x=0;x<w;x++){const n=y*w+x,k=n*4;if(!ms[n]){patch.data.set(src.subarray(k,k+4),k);continue;}
-    const l=left[x],r=right[x],a=l>=0?l:r,b=r>=0?r:l;
-    if(a<0){patch.data.set([245,237,229,255],k);continue;}
-    const t=a===b?0:(x-a)/(b-a);
-    for(let c=0;c<3;c++)patch.data[k+c]=src[(y*w+a)*4+c]*(1-t)+src[(y*w+b)*4+c]*t;
-    patch.data[k+3]=255;
-   }
-  }
-  rc.putImageData(patch,0,0);
-  bodyBackground=document.createElement("canvas");bodyBackground.width=canvas.width;bodyBackground.height=canvas.height;
-  const bg=bodyBackground.getContext("2d");bg.drawImage(repair,0,0,canvas.width,canvas.height);
-  // Overlay original outside mask to avoid changing the original background texture.
-  const clean=document.createElement("canvas");clean.width=canvas.width;clean.height=canvas.height;
-  const cc=clean.getContext("2d");cc.drawImage(image,0,0);cc.globalCompositeOperation="destination-out";cc.drawImage(fullMask,0,0);cc.globalCompositeOperation="source-over";
-  bg.drawImage(clean,0,0);
-  bodyPivot={x:(result.bounds.x+result.bounds.w/2)*canvas.width/small.width,y:(result.bounds.y+result.bounds.h*.55)*canvas.height/small.height};
-  bodyMode=true;draw();report("全身切り抜きの試作が完了しました。再生して確認してください（背景補完は簡易処理）");
- }catch(err){resetBodyMode();draw();report("全身切り抜きを見送りました："+err.message,true);}
+let bodyMode=false,bodyLayer=null,bodyBackground=null,bodyPivot=null,bodyAlpha=null;
+let mlCandidate=null,mlBusy=false,mlJob=0;
+const mlClient=NonoML.createClient();
+function setMLBusy(value){
+ mlBusy=value;$("cancelML").hidden=!value;$("mlProgress").hidden=!value;
+ for(const id of ["extractBody","autoSelect","select","addPart","undoPart","play","saveVideo","saveProject","openProject"])$(id).disabled=value||recording;
 }
+function clearReview(){
+ mlCandidate=null;$("mlReview").hidden=true;
+ $("acceptEdges").checked=$("acceptBackground").checked=false;$("acceptML").disabled=true;
+ for(const id of ["foregroundPreview","backgroundPreview","motionPreview"]){$(id).width=1;$(id).height=1;}
+}
+function resetBodyMode(){
+ mlJob++;mlClient.cancel();setMLBusy(false);clearReview();
+ bodyMode=false;bodyLayer=null;bodyBackground=null;bodyPivot=null;bodyAlpha=null;$("restoreOriginal").hidden=true;
+}
+let previewDirectionIndex=0;
+const previewDirections=[{label:"右下",x:1,y:1},{label:"左下",x:-1,y:1},{label:"左上",x:-1,y:-1},{label:"右上",x:1,y:-1}];
+function renderMotionPreview(result){
+ if(!result)return;
+ const preview=$("motionPreview");
+ preview.width=result.foreground.width;preview.height=result.foreground.height;
+ const p=preview.getContext("2d"),side=Math.min(preview.width,preview.height),dir=previewDirections[previewDirectionIndex];
+ p.drawImage(result.background,0,0);
+ p.drawImage(result.foreground,Math.round(side*.006*dir.x),Math.round(side*.009*dir.y));
+ $("previewDirection").textContent="移動方向："+dir.label+"（"+(previewDirectionIndex+1)+" / 4）";
+}
+function cycleMotionPreview(step){
+ if(!mlCandidate)return;
+ previewDirectionIndex=(previewDirectionIndex+step+previewDirections.length)%previewDirections.length;
+ renderMotionPreview(mlCandidate);
+}
+$("previewPrevious").onclick=()=>cycleMotionPreview(-1);
+$("previewNext").onclick=()=>cycleMotionPreview(1);
+function reviewCandidate(result){
+ clearReview();mlCandidate=result;$("mlReview").hidden=false;
+ for(const [id,layer] of [["foregroundPreview",result.foreground],["backgroundPreview",result.background]]){
+  const c=$(id);c.width=layer.width;c.height=layer.height;c.getContext("2d").drawImage(layer,0,0);
+ }
+ previewDirectionIndex=0;
+ renderMotionPreview(result);
+ report("抽出候補を作成しました。輪郭と補完背景を確認してください。まだ再生できません。");
+}
+async function extractWholeBody(){
+ if(!loaded)return report("先に画像を読み込んでください",true);
+ if(recording||mlBusy)return;
+ stopAnimation();resetBodyMode();resetSelection();parts.length=0;cachedBackground=null;countParts();draw();
+ const job=++mlJob;setMLBusy(true);$("mlProgress").removeAttribute("value");report("AIモデルを読み込んでいます… 初回は時間がかかります");
+ try{
+  const source=document.createElement("canvas");source.width=canvas.width;source.height=canvas.height;
+  source.getContext("2d").drawImage(image,0,0,source.width,source.height);
+  const result=await mlClient.extract(source,{onProgress:p=>{
+   if(job!==mlJob)return;
+   if(Number.isFinite(p.progress))$("mlProgress").value=Math.max(0,Math.min(100,p.progress));else $("mlProgress").removeAttribute("value");
+   report("AI処理："+p.stage+(p.file?" · "+p.file:"")+(Number.isFinite(p.progress)?" "+Math.floor(p.progress)+"%":""));
+  }});
+  if(job!==mlJob)return;reviewCandidate(result);
+ }catch(e){if(job===mlJob){clearReview();draw();report("抽出を見送りました："+e.message+"。元画像は保持しています。",true);}}
+ finally{if(job===mlJob)setMLBusy(false);}
+}
+function downloadCanvas(canvas,name){
+ const a=document.createElement("a");
+ a.href=canvas.toDataURL("image/png");a.download=name;a.click();
+}
+$("downloadMask").onclick=()=>{
+ if(!mlCandidate)return report("先にAIの抽出候補を生成してください",true);
+ try{downloadCanvas(mlCandidate.alpha,"nono-mask.png");}
+ catch(e){report("マスク保存に失敗："+e.message,true);}
+};
+$("downloadComparison").onclick=()=>{
+ if(!mlCandidate)return report("先にAIの抽出候補を生成してください",true);
+ try{
+  const w=mlCandidate.foreground.width,h=mlCandidate.foreground.height;
+  const sheet=document.createElement("canvas");sheet.width=w*2;sheet.height=h*2;
+  const c=sheet.getContext("2d");
+  c.drawImage(image,0,0,w,h);
+  c.drawImage(mlCandidate.foreground,w,0);
+  c.drawImage(mlCandidate.background,0,h);
+  c.drawImage($("motionPreview"),w,h);
+  downloadCanvas(sheet,"nono-quality-comparison.png");
+ }catch(e){report("比較画像保存に失敗："+e.message,true);}
+};
 $("extractBody").addEventListener("click",extractWholeBody);
+$("autoSelect").onclick=extractWholeBody;
+for(const id of ["acceptEdges","acceptBackground"])$(id).onchange=()=>{
+ $("acceptML").disabled=!($("acceptEdges").checked&&$("acceptBackground").checked);
+};
+$("acceptML").onclick=()=>{
+ if(!mlCandidate||!$("acceptEdges").checked||!$("acceptBackground").checked)return;
+ const r=mlCandidate;bodyLayer=r.foreground;bodyBackground=r.background;bodyPivot=r.pivot;bodyAlpha=r.alpha;bodyMode=true;
+ clearReview();$("restoreOriginal").hidden=false;draw();$("play").click();
+};
+function restoreOriginal(){if(recording)return;stopAnimation();resetBodyMode();resetSelection();parts.length=0;cachedBackground=null;countParts();draw();report("元画像に戻しました");}
+$("cancelML").onclick=restoreOriginal;$("rejectML").onclick=restoreOriginal;$("restoreOriginal").onclick=restoreOriginal;
 
 const parts=[];
 let sourceDataUrl=null;
@@ -170,63 +227,27 @@ function resetSelection() {
   pivot = null;
 }
 
-async function tryFullAuto(){
- if(!loaded||typeof NonoAnalyzer?.autoDetectTail!=="function")return report("自動解析の読み込みに失敗しました。再読み込みしてください",true);
- report("しっぽ候補を全自動で解析中…");
- await new Promise(resolve=>setTimeout(resolve,50));
+// Color-based automatic selection has been retired.
+let imageLoadJob=0;
+document.getElementById("file").onchange = async e => {
+ const file=e.target.files[0];if(!file||recording)return;
+ const job=++imageLoadJob;stopAnimation();resetBodyMode();resetSelection();parts.length=0;sourceDataUrl=null;cachedBackground=null;countParts();loaded=false;
+ ctx.clearRect(0,0,canvas.width,canvas.height);report("画像を読み込んでいます…");
+ const url=URL.createObjectURL(file);
  try{
-  const ratio=Math.min(1,256/Math.max(image.naturalWidth,image.naturalHeight));
-  const w=Math.max(1,Math.round(image.naturalWidth*ratio)),h=Math.max(1,Math.round(image.naturalHeight*ratio));
-  const work=document.createElement("canvas");work.width=w;work.height=h;
-  const c=work.getContext("2d",{willReadFrequently:true});c.drawImage(image,0,0,w,h);
-  const pixels=c.getImageData(0,0,w,h),detected=NonoAnalyzer.autoDetectTail(pixels);
-  // Safety: geometry-only heuristics cannot reliably isolate the tail in detailed character illustrations.
-  // Never auto-cut or replace pixels without a validated semantic segmentation mask.
-  if(detected.ok){report("画像を解析しました。現在の方式ではしっぽと背景を確実に区別できないため、画像を壊す自動切り抜きは停止しています。");return;}
-  if(!detected.ok){report("画像を解析しました。自動切り抜きは品質保護のため停止中です。元画像はそのまま保持します。");return;}
-  const point=detected.seed;
-  const selected=NonoAnalyzer.selectRegion(pixels,point.x,point.y,{threshold:38,maxFraction:.2});
-  if(selected.polygon.length<3||selected.coverage>.2)throw Error("範囲の信頼性が不足");
-  const sx=canvas.width/w,sy=canvas.height/h;
-  const polygon=selected.polygon.map(p=>({x:p.x*sx,y:p.y*sy}));
-  const minx=Math.max(0,Math.floor(Math.min(...polygon.map(p=>p.x))));
-  const miny=Math.max(0,Math.floor(Math.min(...polygon.map(p=>p.y))));
-  const maxx=Math.min(canvas.width,Math.ceil(Math.max(...polygon.map(p=>p.x))));
-  const maxy=Math.min(canvas.height,Math.ceil(Math.max(...polygon.map(p=>p.y))));
-  if(maxx-minx<4||maxy-miny<4)throw Error("領域が小さすぎます");
-  const layer=document.createElement("canvas");layer.width=maxx-minx;layer.height=maxy-miny;
-  const lc=layer.getContext("2d");lc.beginPath();polygon.forEach((p,i)=>i?lc.lineTo(p.x-minx,p.y-miny):lc.moveTo(p.x-minx,p.y-miny));lc.closePath();lc.clip();lc.drawImage(image,-minx,-miny);
-  tail={layer,x:minx,y:miny,w:layer.width,h:layer.height,mask:polygon};
-  const centerX=(minx+maxx)/2,centerY=(miny+maxy)/2;
-  pivot={x:centerX<canvas.width/2?maxx:minx,y:centerY};
-  cachedBackground=null;countParts();draw();$("play").click();
-  report("全自動で候補を抽出して再生中（推定精度："+Math.round(detected.confidence*100)+"・保証値ではありません）。違う部分が動いたら停止してください。");
- }catch(err){tail=null;pivot=null;countParts();draw();report("全自動では安全に抽出できませんでした："+err.message);}
-}
-
-document.getElementById("file").onchange = e => {
-  const file = e.target.files[0];
-  if (!file) return;
-  stopAnimation();
-  resetBodyMode();resetSelection();parts.length=0;sourceDataUrl=null;cachedBackground=null;countParts();
-  loaded = false;
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  report("画像を読み込んでいます…");
-  const url = URL.createObjectURL(file);
-  image.onload = () => {
-    canvas.width = image.naturalWidth;
-    canvas.height = image.naturalHeight;
-    loaded = true;
-    try {const c=document.createElement("canvas");c.width=image.naturalWidth;c.height=image.naturalHeight;c.getContext("2d").drawImage(image,0,0);sourceDataUrl=c.toDataURL("image/png");}catch(_){sourceDataUrl=null;}
-    draw();
-    tryFullAuto();
-    URL.revokeObjectURL(url);
-  };
-  image.onerror = () => {
-    URL.revokeObjectURL(url);
-    report("画像を読み込めませんでした。PNG または JPEG の画像を選び直してください。", true);
-  };
-  image.src = url;
+  if(file.size>25*1024*1024)throw Error("25MB以下の画像を選んでください");
+  const incoming=new Image();
+  await new Promise((resolve,reject)=>{incoming.onload=resolve;incoming.onerror=()=>reject(Error("PNG または JPEG の画像を選び直してください"));incoming.src=url;});
+  if(job!==imageLoadJob)return;
+  if(incoming.naturalWidth*incoming.naturalHeight>24000000)throw Error("画像が大きすぎます。24メガピクセル以下を選んでください");
+  const ratio=Math.min(1,NonoML.MAX_SIDE/Math.max(incoming.naturalWidth,incoming.naturalHeight));
+  const c=document.createElement("canvas");c.width=Math.max(1,Math.round(incoming.naturalWidth*ratio));c.height=Math.max(1,Math.round(incoming.naturalHeight*ratio));
+  c.getContext("2d").drawImage(incoming,0,0,c.width,c.height);
+  sourceDataUrl=c.toDataURL("image/png");image.onload=null;image.onerror=null;image.src=sourceDataUrl;await image.decode();
+  if(job!==imageLoadJob)return;
+  canvas.width=image.naturalWidth;canvas.height=image.naturalHeight;loaded=true;draw();extractWholeBody();
+ }catch(err){if(job===imageLoadJob)report("画像を読み込めませんでした："+err.message,true);}
+ finally{URL.revokeObjectURL(url);e.target.value="";}
 };
 
 function position(e) {
@@ -243,9 +264,9 @@ function position(e) {
   };
 }
 
-$("autoSelect").onclick=()=>{if(!loaded)return report("先に画像を読み込んでください",true);stopAnimation();archivePart();resetSelection();autoSelecting=true;report("しっぽの先端を1回タップしてください。色のつながりから自動選択します");};
 document.getElementById("select").onclick = () => {
   if (!loaded) return report("先に画像を読み込んでください。", true);
+  if(recording||mlBusy)return;
   stopAnimation();
   resetBodyMode();resetSelection();
   selecting = true;
@@ -267,27 +288,6 @@ function begin(e) {
   if (e.cancelable) e.preventDefault();
   try {
     const point = position(e);
-    if(autoSelecting){
-      const scale=Math.min(1,320/Math.max(image.naturalWidth,image.naturalHeight));
-      const w=Math.max(1,Math.round(image.naturalWidth*scale)),h=Math.max(1,Math.round(image.naturalHeight*scale));
-      const work=document.createElement("canvas");work.width=w;work.height=h;
-      const wc=work.getContext("2d",{willReadFrequently:true});wc.drawImage(image,0,0,w,h);
-      if(typeof window.NonoAnalyzer?.selectRegion!=="function")throw Error("解析プログラムが古い状態です。ページを再読み込みしてください");
-      const selected=window.NonoAnalyzer.selectRegion(wc.getImageData(0,0,w,h),point.x*w/canvas.width,point.y*h/canvas.height);
-      if(selected.polygon.length<3)throw Error("輪郭を検出できませんでした");
-      const sx=canvas.width/w,sy=canvas.height/h;
-      points=selected.polygon.map(q=>({x:q.x*sx,y:q.y*sy}));
-      const minx=Math.max(0,Math.floor(Math.min(...points.map(q=>q.x))));
-      const miny=Math.max(0,Math.floor(Math.min(...points.map(q=>q.y))));
-      const maxx=Math.min(canvas.width,Math.ceil(Math.max(...points.map(q=>q.x))));
-      const maxy=Math.min(canvas.height,Math.ceil(Math.max(...points.map(q=>q.y))));
-      const layer=document.createElement("canvas");layer.width=Math.max(1,maxx-minx);layer.height=Math.max(1,maxy-miny);
-      const lc=layer.getContext("2d");lc.beginPath();points.forEach((q,i)=>i?lc.lineTo(q.x-minx,q.y-miny):lc.moveTo(q.x-minx,q.y-miny));lc.closePath();lc.clip();lc.drawImage(image,-minx,-miny);
-      tail={layer,x:minx,y:miny,w:layer.width,h:layer.height,mask:points.map(q=>({...q}))};
-      pivot={x:(minx+maxx)/2,y:maxy};autoSelecting=false;points=[];cachedBackground=null;countParts();draw();
-      report("自動選択しました！ 違う場所が動く場合は、しっぽの別の場所をタップして試してね");
-      return;
-    }
     if (choosingPivot) {
       pivot = point;
       choosingPivot = false;
@@ -391,10 +391,12 @@ function draw(time = 0) {
   if (!loaded) return;
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   if(bodyMode&&bodyLayer&&bodyBackground&&bodyPivot){
+   if(!playing){ctx.drawImage(image,0,0);return;}
    ctx.drawImage(bodyBackground,0,0);
    const t=playing&&startTime!==null?(time-startTime):0;
    const base=Math.min(canvas.width,canvas.height);
-   const dx=Math.sin(t/510)*base*.004,dy=Math.sin(t/390)*base*.007,angle=Math.sin(t/550)*.025;
+   const m=NonoML.motionAt(t,motion.speed,motion.amplitude);
+   const dx=m.x*base,dy=m.y*base,angle=m.angle;
    ctx.save();ctx.translate(bodyPivot.x+dx,bodyPivot.y+dy);ctx.rotate(angle);ctx.drawImage(bodyLayer,-bodyPivot.x,-bodyPivot.y);ctx.restore();
    return;
   }
@@ -449,6 +451,7 @@ function animate(time) {
 
 document.getElementById("play").onclick = () => {
   if (!loaded) return report("先に画像を読み込んでください。", true);
+  if(mlBusy||mlCandidate)return report("先に抽出候補の輪郭と補完背景を確認してください。",true);
   if (!bodyMode && (drawing || selecting || (!tail&&!parts.length))) return report("しっぽの選択が完了していません。輪郭を囲んで指を離してください。", true);
   if (!bodyMode&&!pivot&&!parts.length) return report("付け根が未指定です。画像のしっぽの付け根をタップしてください。", true);
   if (playing) return report("アニメーションは再生中です。");
@@ -457,24 +460,31 @@ document.getElementById("play").onclick = () => {
   playing = true;
   try {
     frameId = requestAnimationFrame(animate);
-    report("しっぽをふりふりしています");
+    report(bodyMode?"のの全体をゆっくり動かしています。違和感があれば停止して元画像に戻してください。":"パーツを動かしています");
   } catch (error) { animationError(error); }
 };
 
 document.getElementById("stop").onclick = () => {
   stopAnimation();
   draw();
-  report("停止しました。再生するには「▶ ふりふり」を押してください。");
+  report("停止しました。再生ボタンで再開できます。");
 };
 
 $("saveImage").addEventListener("click",()=>{
-  if(!loaded)return report("先に画像を読み込んでください。",true);
-  const wasPlaying=playing;stopAnimation();draw();
-  const link=document.createElement("a");link.href=canvas.toDataURL("image/png");link.download="nono-frame.png";link.click();
-  if(wasPlaying)$("play").click();else report("画像を書き出しました");
+ if(recording)return;
+ if(!loaded)return report("先に画像を読み込んでください。",true);
+ const wasPlaying=playing;
+ try{
+  // A running whole-body frame is already a clean export frame.
+  if(!(bodyMode&&playing)){stopAnimation();const old=recording;recording=true;draw();recording=old;}
+  const png=canvas.toDataURL("image/png");stopAnimation();
+  const link=document.createElement("a");link.href=png;link.download="nono-frame.png";link.click();
+  draw();if(wasPlaying)$("play").click();else report("画像を書き出しました");
+ }catch(e){stopAnimation();recording=false;report("画像を書き出せません："+e.message,true);}
 });
 $("saveVideo").addEventListener("click",async()=>{
-  if(recording)return;
+  if(recording||mlBusy)return;
+  if(mlCandidate)return report("先に抽出候補を確認してください",true);
   if(!loaded||(!bodyMode&&!parts.length&&(!tail||!pivot)))return report("先に画像としっぽ、付け根を指定してください。",true);
   if(typeof canvas.captureStream!=="function"||typeof MediaRecorder==="undefined")return report("このSafariでは動画録画に対応していません。画像保存をご利用ください。",true);
   const types=["video/mp4;codecs=avc1.42E01E","video/mp4","video/webm;codecs=vp9","video/webm"];
@@ -482,29 +492,36 @@ $("saveVideo").addEventListener("click",async()=>{
   if(!type)return report("対応する動画形式が見つかりません。Safariのバージョンを確認してください。",true);
   let stream;
   try{
-    stopAnimation();recording=true;$("saveVideo").disabled=true;
+    stopAnimation();recording=true;setMLBusy(false);
+    for(const id of ["file","openProject","acceptML","rejectML","restoreOriginal","stop","saveImage"])$(id).disabled=true;
     stream=canvas.captureStream(30);
     const chunks=[];
     const recorder=new MediaRecorder(stream,{mimeType:type,videoBitsPerSecond:2500000});
     recorder.ondataavailable=e=>{if(e.data.size)chunks.push(e.data);};
     recorder.onerror=()=>report("動画の録画に失敗しました。",true);
-    const result=new Promise((resolve,reject)=>{recorder.onstop=resolve;recorder.onerror=reject;});
+    let recordingError=null;
+    const result=new Promise(resolve=>{recorder.onstop=resolve;recorder.onerror=e=>{recordingError=e.error||Error("録画に失敗しました");resolve();};});
     recorder.start();playing=true;startTime=null;frameId=requestAnimationFrame(animate);
     report("動画を書き出しています…");
-    await new Promise(resolve=>setTimeout(resolve,Number($("duration").value)*1000));
-    recorder.stop();await result;
+    await new Promise((resolve,reject)=>{
+     const timer=setTimeout(done,Number($("duration").value)*1000);
+     function done(){document.removeEventListener("visibilitychange",hidden);resolve();}
+     function hidden(){if(document.hidden){clearTimeout(timer);document.removeEventListener("visibilitychange",hidden);if(recorder.state!=="inactive")recorder.stop();reject(Error("画面が非表示になったため録画を中止しました"));}}
+     document.addEventListener("visibilitychange",hidden);
+    });
+    if(recorder.state!=="inactive")recorder.stop();await result;if(recordingError)throw recordingError;
     const blob=new Blob(chunks,{type});
     if(!blob.size)throw new Error("動画データが空です");
     const url=URL.createObjectURL(blob),link=document.createElement("a");
     link.href=url;link.download="nono-animation."+(type.includes("mp4")?"mp4":"webm");link.click();
     setTimeout(()=>URL.revokeObjectURL(url),60000);report("動画を保存しました。");
   }catch(error){report("動画の書き出しに失敗しました："+error.message,true);}
-  finally{recording=false;$("saveVideo").disabled=false;stopAnimation();draw();if(stream)stream.getTracks().forEach(t=>t.stop());}
+  finally{recording=false;setMLBusy(false);for(const id of ["file","openProject","acceptML","rejectML","restoreOriginal","stop","saveImage"])$(id).disabled=false;stopAnimation();draw();if(stream)stream.getTracks().forEach(t=>t.stop());}
 });
 
 function downloadData(name,blob){const url=URL.createObjectURL(blob),a=document.createElement("a");a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),60000);}
-$("saveProject").addEventListener("click",()=>{if(!loaded||!sourceDataUrl)return report("画像を読み込んでから保存してください",true);const all=[...parts,...(tail&&pivot?[{...tail,pivot}]:[])];const data={format:"nono-studio",version:1,image:sourceDataUrl,scene:$("scene").value,motion:{...motion},duration:Number($("duration").value),parts:all.map(p=>({mask:p.mask,pivot:p.pivot,x:p.x,y:p.y,w:p.w,h:p.h}))};downloadData("nono-project.json",new Blob([JSON.stringify(data)],{type:"application/json"}));report("制作データを保存しました");});
-$("openProject").addEventListener("change",async e=>{const file=e.target.files[0];if(!file)return;try{const data=JSON.parse(await file.text());if(data.format!=="nono-studio"||data.version!==1||typeof data.image!=="string"||!data.image.startsWith("data:image/")||data.image.length>15000000||!Array.isArray(data.parts)||data.parts.length>30)throw Error("対応していない制作データです");stopAnimation();const im=new Image();await new Promise((resolve,reject)=>{im.onload=resolve;im.onerror=reject;im.src=data.image;});if(im.naturalWidth*im.naturalHeight>12000000)throw Error("画像が大きすぎます");image.src=data.image;await image.decode();canvas.width=image.naturalWidth;canvas.height=image.naturalHeight;loaded=true;sourceDataUrl=data.image;resetSelection();parts.length=0;cachedBackground=null;for(const p of data.parts){if(!Array.isArray(p.mask)||p.mask.length<3||p.mask.length>20000||!p.mask.every(q=>Number.isFinite(q.x)&&Number.isFinite(q.y))||!p.pivot||!Number.isFinite(p.pivot.x)||!Number.isFinite(p.pivot.y)||![p.x,p.y,p.w,p.h].every(Number.isFinite)||p.w<=0||p.h<=0||p.w*p.h>12000000)continue;const layer=document.createElement("canvas");layer.width=p.w;layer.height=p.h;const lc=layer.getContext("2d");lc.beginPath();p.mask.forEach((q,i)=>i?lc.lineTo(q.x-p.x,q.y-p.y):lc.moveTo(q.x-p.x,q.y-p.y));lc.closePath();lc.clip();lc.drawImage(image,-p.x,-p.y);parts.push({...p,layer});}const m=data.motion||{};$("speed").value=Number(m.speed)||1;$("amplitude").value=Number(m.amplitude)||15;$("preset").value=presets[m.preset]?m.preset:"wag";updateMotionUI();$("duration").value=data.duration||3;$("duration").dispatchEvent(new Event("input"));$("scene").value=String(data.scene||"").slice(0,3000);countParts();draw();report("制作データを読み込みました");}catch(err){report("制作データを開けません："+err.message,true);}finally{e.target.value="";}});
+$("saveProject").addEventListener("click",()=>{if(recording||mlBusy)return;if(!loaded||!sourceDataUrl)return report("画像を読み込んでから保存してください",true);const all=[...parts,...(tail&&pivot?[{...tail,pivot}]:[])];const data={format:"nono-studio",version:2,bodyMask:(bodyAlpha||mlCandidate?.alpha)?.toDataURL("image/png")||null,image:sourceDataUrl,scene:$("scene").value,motion:{...motion},duration:Number($("duration").value),parts:all.map(p=>({mask:p.mask,pivot:p.pivot,x:p.x,y:p.y,w:p.w,h:p.h}))};downloadData("nono-project.json",new Blob([JSON.stringify(data)],{type:"application/json"}));report("制作データを保存しました");});
+$("openProject").addEventListener("change",async e=>{const file=e.target.files[0];if(!file||recording||mlBusy)return;try{if(file.size>20000000)throw Error("制作データが大きすぎます");const data=JSON.parse(await file.text());if(data.format!=="nono-studio"||![1,2].includes(data.version)||typeof data.image!=="string"||!data.image.startsWith("data:image/")||data.image.length>15000000||!Array.isArray(data.parts)||data.parts.length>30)throw Error("対応していない制作データです");stopAnimation();resetBodyMode();imageLoadJob++;image.onload=null;image.onerror=null;const im=new Image();await new Promise((resolve,reject)=>{im.onload=resolve;im.onerror=reject;im.src=data.image;});if(im.naturalWidth*im.naturalHeight>12000000)throw Error("画像が大きすぎます");image.src=data.image;await image.decode();canvas.width=image.naturalWidth;canvas.height=image.naturalHeight;loaded=true;sourceDataUrl=data.image;resetSelection();parts.length=0;cachedBackground=null;for(const p of data.parts){if(!Array.isArray(p.mask)||p.mask.length<3||p.mask.length>20000||!p.mask.every(q=>Number.isFinite(q.x)&&Number.isFinite(q.y))||!p.pivot||!Number.isFinite(p.pivot.x)||!Number.isFinite(p.pivot.y)||![p.x,p.y,p.w,p.h].every(Number.isFinite)||p.w<=0||p.h<=0||p.w*p.h>12000000)continue;const layer=document.createElement("canvas");layer.width=p.w;layer.height=p.h;const lc=layer.getContext("2d");lc.beginPath();p.mask.forEach((q,i)=>i?lc.lineTo(q.x-p.x,q.y-p.y):lc.moveTo(q.x-p.x,q.y-p.y));lc.closePath();lc.clip();lc.drawImage(image,-p.x,-p.y);parts.push({...p,layer});}const m=data.motion||{};$("speed").value=Number(m.speed)||1;$("amplitude").value=Number(m.amplitude)||15;$("preset").value=presets[m.preset]?m.preset:"wag";updateMotionUI();$("duration").value=data.duration||3;$("duration").dispatchEvent(new Event("input"));$("scene").value=String(data.scene||"").slice(0,3000);countParts();draw();report("制作データを読み込みました");if(data.version===2&&data.bodyMask){if(typeof data.bodyMask!=="string"||!data.bodyMask.startsWith("data:image/png;base64,")||data.bodyMask.length>3000000)throw Error("前景マスクの形式が不正です");const mi=new Image();await new Promise((resolve,reject)=>{mi.onload=resolve;mi.onerror=()=>reject(Error("前景マスクを読込できません"));mi.src=data.bodyMask;});if(mi.naturalWidth!==canvas.width||mi.naturalHeight!==canvas.height)throw Error("前景マスクのサイズが不正です");const ac=document.createElement("canvas");ac.width=canvas.width;ac.height=canvas.height;const ax=ac.getContext("2d");ax.drawImage(mi,0,0);const pixels=ax.getImageData(0,0,ac.width,ac.height).data,mask=new Uint8Array(ac.width*ac.height);for(let i=0;i<mask.length;i++)mask[i]=pixels[i*4+3];parts.length=0;resetSelection();cachedBackground=null;countParts();reviewCandidate(NonoML.buildLayers(image,mask,ac.width,ac.height));}}catch(err){report("制作データを開けません："+err.message,true);}finally{e.target.value="";}});
 
 </script>
 </body>
