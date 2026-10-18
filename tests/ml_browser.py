@@ -50,6 +50,13 @@ try:
           const d=c.getContext('2d').getImageData(50,50,1,1).data;
           return d[0]===240&&d[1]===20&&d[2]===30;
         }""")
+        assert '右下' in page.locator('#previewDirection').inner_text()
+        page.locator('#previewNext').tap()
+        assert '左下' in page.locator('#previewDirection').inner_text()
+        page.locator('#previewNext').tap()
+        assert '左上' in page.locator('#previewDirection').inner_text()
+        page.locator('#previewPrevious').tap()
+        assert '左下' in page.locator('#previewDirection').inner_text()
         with page.expect_download() as dl:
             page.locator('#downloadMask').tap()
         assert dl.value.suggested_filename=='nono-mask.png'
