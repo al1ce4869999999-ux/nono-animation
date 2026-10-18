@@ -38,8 +38,9 @@ footer{text-align:center;padding:5px 0;font-size:12px;color:#9f897d}
 <p>抽出候補です。成功判定ではありません。髪・耳・手・しっぽの欠け、背景の残り、補完のにじみを確認してください。</p>
 <label>透過前景<canvas id="foregroundPreview" aria-label="透過前景の確認"></canvas></label>
 <label>補完した背景<canvas id="backgroundPreview" aria-label="キャラクターを除去した背景の確認"></canvas></label>
+<label>最大振幅で移動したときの合成プレビュー<canvas id="motionPreview" aria-label="背景の残像と輪郭を確認する最大変位プレビュー"></canvas></label>
 <label><input id="acceptEdges" type="checkbox">のの全体の輪郭と造形を確認した</label><br>
-<label><input id="acceptBackground" type="checkbox">補完背景にののの残像や目立つ破綻がない</label>
+<label><input id="acceptBackground" type="checkbox">補完背景と最大変位プレビューに残像や目立つ破綻がない</label>
 <div class="row"><button id="acceptML" disabled>確認した候補で動きを試す</button><button id="rejectML" class="secondary">元画像に戻す</button></div>
 <p class="hint">動かしたときだけ補完が見える場合があります。違和感があれば停止して元画像に戻してください。</p></div>
 <button id="restoreOriginal" class="secondary" hidden>元画像に戻す</button><div class="row"><button class="secondary" id="addPart">＋ パーツを追加</button><button class="secondary" id="undoPart">↶ 最後を削除</button></div><p id="partCount" class="hint">パーツ：0個</p><div class="row"><button id="inspectImage" class="secondary">🔍 イラストの特徴を解析</button></div><p id="imageInfo" class="hint">明るさ・コントラスト・輪郭の複雑さを端末内で計算します。</p>
@@ -91,7 +92,7 @@ function setMLBusy(value){
 function clearReview(){
  mlCandidate=null;$("mlReview").hidden=true;
  $("acceptEdges").checked=$("acceptBackground").checked=false;$("acceptML").disabled=true;
- for(const id of ["foregroundPreview","backgroundPreview"]){$(id).width=1;$(id).height=1;}
+ for(const id of ["foregroundPreview","backgroundPreview","motionPreview"]){$(id).width=1;$(id).height=1;}
 }
 function resetBodyMode(){
  mlJob++;mlClient.cancel();setMLBusy(false);clearReview();
@@ -102,6 +103,11 @@ function reviewCandidate(result){
  for(const [id,layer] of [["foregroundPreview",result.foreground],["backgroundPreview",result.background]]){
   const c=$(id);c.width=layer.width;c.height=layer.height;c.getContext("2d").drawImage(layer,0,0);
  }
+ const preview=$("motionPreview");preview.width=result.foreground.width;preview.height=result.foreground.height;
+ const px=preview.getContext("2d"),shortSide=Math.min(preview.width,preview.height);
+ // Preview worst-case translation independently of the playback phase to reveal hidden ghosts.
+ px.drawImage(result.background,0,0);
+ px.drawImage(result.foreground,Math.round(shortSide*.006),Math.round(shortSide*.009));
  report("抽出候補を作成しました。輪郭と補完背景を確認してください。まだ再生できません。");
 }
 async function extractWholeBody(){
