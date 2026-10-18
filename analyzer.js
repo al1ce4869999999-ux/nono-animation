@@ -48,5 +48,44 @@ function imageStats(imageData){
  const mean=count?sum/count:0;
  return {brightness:Math.round(mean),contrast:Math.round(Math.sqrt(Math.max(0,sumSq/count-mean*mean))),edgeDensity:Math.round(edge/Math.max(1,count)),recommendation:edge/Math.max(1,count)>35?"輪郭が多い画像。パーツを細かく囲むと継ぎ目が目立ちます。":"輪郭が比較的少ない画像。大きめのパーツで試せます。"};
 }
-root.NonoAnalyzer={analyze,sample,imageStats};
+
+function selectRegion(imageData,px,py,{threshold=40,maxFraction=0.38}={}){
+ const {width:w,height:h,data}=imageData;
+ if(!w||!h||w*h>500000)throw Error("解析画像が大きすぎます");
+ const x=Math.max(0,Math.min(w-1,Math.floor(px))),y=Math.max(0,Math.min(h-1,Math.floor(py)));
+ const base=(y*w+x)*4,seed=[data[base],data[base+1],data[base+2]];
+ const visited=new Uint8Array(w*h),stack=[y*w+x],points=[];
+ const max=Math.floor(w*h*maxFraction);
+ let minx=w,miny=h,maxx=0,maxy=0;
+ while(stack.length){
+ const n=stack.pop();if(visited[n])continue;visited[n]=1;
+ const a=n*4,xx=n%w,yy=(n/w)|0;
+ const diff=Math.sqrt((data[a]-seed[0])**2+(data[a+1]-seed[1])**2+(data[a+2]-seed[2])**2);
+ if(diff>threshold||data[a+3]<64)continue;
+ points.push([xx,yy]);minx=Math.min(minx,xx);miny=Math.min(miny,yy);maxx=Math.max(maxx,xx);maxy=Math.max(maxy,yy);
+ if(points.length>max)throw Error("領域が広すぎます。しっぽの先端など別の場所をタップしてください");
+ if(xx>0&&!visited[n-1])stack.push(n-1);
+ if(xx<w-1&&!visited[n+1])stack.push(n+1);
+ if(yy>0&&!visited[n-w])stack.push(n-w);
+ if(yy<h-1&&!visited[n+w])stack.push(n+w);
+ }
+ if(points.length<8)throw Error("領域を認識できません。別の場所をタップしてください");
+ const mask=new Uint8Array(w*h);
+ points.forEach(([xx,yy])=>mask[yy*w+xx]=1);
+ const outline=[];
+ for(const [xx,yy] of points){
+ const n=yy*w+xx;
+ if(xx===0||yy===0||xx===w-1||yy===h-1||!mask[n-1]||!mask[n+1]||!mask[n-w]||!mask[n+w])outline.push([xx,yy]);
+ }
+ // Hull of detected boundary: approximate editable polygon, not semantic segmentation.
+ outline.sort((a,b)=>a[0]-b[0]||a[1]-b[1]);
+ const cross=(o,a,b)=>(a[0]-o[0])*(b[1]-o[1])-(a[1]-o[1])*(b[0]-o[0]);
+ const lower=[],upper=[];
+ for(const p of outline){while(lower.length>1&&cross(lower.at(-2),lower.at(-1),p)<=0)lower.pop();lower.push(p);}
+ for(let i=outline.length-1;i>=0;i--){const p=outline[i];while(upper.length>1&&cross(upper.at(-2),upper.at(-1),p)<=0)upper.pop();upper.push(p);}
+ const hull=lower.slice(0,-1).concat(upper.slice(0,-1));
+ return {polygon:hull.map(p=>({x:p[0],y:p[1]})),bounds:{x:minx,y:miny,w:maxx-minx+1,h:maxy-miny+1},coverage:points.length/(w*h)};
+}
+
+root.NonoAnalyzer={analyze,sample,imageStats,selectRegion};
 })(typeof window!=="undefined"?window:globalThis);
