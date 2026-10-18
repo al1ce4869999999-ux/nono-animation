@@ -94,3 +94,14 @@ test("external background and large enclosed spaces remain transparent",()=>{
  assert.equal(fixed[20*100+32],0);
  assert.equal(fixed[5*100+5],0);
 });
+
+test("alpha 1 and 2 hair fringes cannot be used as background paint donors",()=>{
+ const w=40,h=40,src=new Uint8ClampedArray(w*h*4),mask=new Uint8Array(w*h);
+ for(let i=0;i<w*h;i++)src.set([12,80,90,255],i*4);
+ for(let y=12;y<28;y++)for(let x=12;x<28;x++){
+  const k=y*w+x;mask[k]=255;src.set([250,10,10,255],k*4);
+ }
+ for(const x of [10,11]){mask[20*w+x]=x===10?1:2;src.set([250,10,10,255],(20*w+x)*4);}
+ const r=ML.repairPixels(src,mask,w,h);
+ for(const x of [10,11])assert.deepEqual(Array.from(r.pixels.slice((20*w+x)*4,(20*w+x)*4+4)),[12,80,90,255]);
+});
