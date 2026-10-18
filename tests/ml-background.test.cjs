@@ -74,3 +74,23 @@ test("model heap is released before layer allocation, including allocation failu
   await assert.rejects(result,/canvas allocation failed/);
  }finally{if(previous===undefined)delete globalThis.document;else globalThis.document=previous;}
 });
+
+
+test("tiny enclosed holes in character matte are filled without mutating model output",()=>{
+ const m=goodMask(),original=new Uint8Array(m);
+ for(let y=45;y<48;y++)for(let x=44;x<47;x++)m[y*100+x]=0;
+ const fixed=ML.fillSmallMaskHoles(m,100,100);
+ assert.equal(fixed[46*100+45],255);
+ assert.equal(m[46*100+45],0);
+ assert.equal(fixed[10*100+10],0);
+ assert.deepEqual(m.slice(0,100),original.slice(0,100));
+});
+test("external background and large enclosed spaces remain transparent",()=>{
+ const m=goodMask();
+ for(let y=42;y<55;y++)for(let x=42;x<55;x++)m[y*100+x]=0;
+ for(let x=30;x<35;x++)m[20*100+x]=0;
+ const fixed=ML.fillSmallMaskHoles(m,100,100);
+ assert.equal(fixed[48*100+48],0);
+ assert.equal(fixed[20*100+32],0);
+ assert.equal(fixed[5*100+5],0);
+});
