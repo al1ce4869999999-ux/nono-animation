@@ -1,0 +1,56 @@
+name: Opt-in CI merge gate
+on:
+  pull_request_target:
+    types: [labeled, synchronize, reopened, ready_for_review]
+  check_suite:
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: read
+
+jobs:
+  merge-only-if-green:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check eligible PRs (never checkout or execute PR code)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          EVENT_NAME: ${{ github.event_name }}
+          LABEL_NAME: ${{ github.event.label.name }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$EVENT_NAME" == "pull_request_target" && "$LABEL_NAME" != "ci-automerge" && "${{ github.event.action }}" == "labeled" ]]; then
+            exit 0
+          fi
+          gh api --paginate "repos/$REPO/pulls?state=open&per_page=100" --jq '.[] | .number' | while read -r number; do
+            pr="$(gh api "repos/$REPO/pulls/$number")"
+            base="$(jq -r '.base.ref' <<<"$pr")"
+            sha="$(jq -r '.head.sha' <<<"$pr")"
+            draft="$(jq -r '.draft' <<<"$pr")"
+            opted="$(jq -r '[.labels[].name] | index("ci-automerge") != null' <<<"$pr")"
+            [[ "$base" == "main" && "$draft" == "false" && "$opted" == "true" ]] || continue
+            checks="$(gh pr view "$number" --repo "$REPO" --json statusCheckRollup)"
+            # At least one real test / lint / typecheck / quality / verify check must pass.
+            # Vercel deployment status alone never authorizes merging.
+            ready="$(jq -r '
+              .statusCheckRollup as $s |
+              ([$s[] | select(
+                ((.name // .context // "") | test("(^|[^a-z])(test|tests|lint|typecheck|quality|verify)([^a-z]|$)"; "i"))
+                and ((.conclusion // .state) == "SUCCESS")
+              )] | length > 0)
+              and ($s | length > 0)
+              and all($s[]; if .__typename == "CheckRun"
+                then (.conclusion == "SUCCESS" or .conclusion == "NEUTRAL" or .conclusion == "SKIPPED")
+                else .state == "SUCCESS" end)
+            ' <<<"$checks")"
+            if [[ "$ready" != "true" ]]; then
+              echo "PR #$number: waiting for all checks and a genuine passing test check"
+              continue
+            fi
+            gh api -X PUT "repos/$REPO/pulls/$number/merge" -f merge_method=squash -f sha="$sha"
+            echo "Merged eligible PR #$number"
+          done
